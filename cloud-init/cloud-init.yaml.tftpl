@@ -1,0 +1,46 @@
+#cloud-config
+# Rendered by Terraform (templatefile). Runs once, on the VM's first boot.
+
+package_update: true
+package_upgrade: false
+packages:
+  - docker.io
+  - curl
+
+write_files:
+  - path: /etc/ssh/sshd_config.d/10-atlas-hardening.conf
+    owner: root:root
+    permissions: "0644"
+    content: |
+      # Defence in depth: Terraform already disables password authentication.
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      PermitRootLogin no
+  - path: /opt/atlas/app/Dockerfile
+    owner: root:root
+    permissions: "0644"
+    content: |
+      ${indent(6, dockerfile)}
+  - path: /opt/atlas/app/nginx.conf
+    owner: root:root
+    permissions: "0644"
+    content: |
+      ${indent(6, nginx_conf)}
+  - path: /opt/atlas/app/index.html
+    owner: root:root
+    permissions: "0644"
+    content: |
+      ${indent(6, index_html)}
+  - path: /opt/atlas/app/run-container.sh
+    owner: root:root
+    permissions: "0755"
+    content: |
+      ${indent(6, run_container_sh)}
+
+runcmd:
+  - [systemctl, enable, --now, docker]
+  - [usermod, -aG, docker, "${admin_username}"]
+  - [/opt/atlas/app/run-container.sh]
+  - [sh, -c, "systemctl reload ssh || true"]
+
+final_message: "Atlas Platform Foundation cloud-init finished after $UPTIME seconds"

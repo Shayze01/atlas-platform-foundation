@@ -1,0 +1,44 @@
+# --- Terraform working files and state (never commit) ---
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+.terraform.tfstate.lock.info
+crash.log
+crash.*.log
+*.tfplan
+tfplan
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# --- Real variable files (may contain your IP, name and key) ---
+*.tfvars
+*.tfvars.json
+!terraform.tfvars.example
+
+# --- Credentials, keys and environment files ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+*.p12
+id_rsa*
+id_ed25519*
+atlas_admin*
+*.azureauth
+.azure/
+
+# --- Local build/test output ---
+build/
+
+# --- Editor / OS noise ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

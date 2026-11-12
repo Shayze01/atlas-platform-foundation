@@ -1,0 +1,5 @@
+# Force LF line endings so shell scripts and cloud-init work even when the
+# repository is cloned on Windows.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
