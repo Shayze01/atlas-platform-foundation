@@ -62,3 +62,42 @@ run "vm_uses_ssh_keys_only" {
     error_message = "Compute resources must carry the common tags."
   }
 }
+
+# Mocked apply: no real resources are created. Fake but well-formed Azure IDs
+# are supplied so the NIC-to-public-IP reference can be compared.
+run "public_ip_attached_to_nic_for_explicit_outbound" {
+  command = apply
+
+  module {
+    source = "./modules/compute"
+  }
+
+  override_resource {
+    target = azurerm_public_ip.vm
+    values = {
+      id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-atlas-foundation-test/providers/Microsoft.Network/publicIPAddresses/pip-atlas-foundation-test"
+    }
+  }
+
+  override_resource {
+    target = azurerm_network_interface.vm
+    values = {
+      id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-atlas-foundation-test/providers/Microsoft.Network/networkInterfaces/nic-atlas-foundation-test"
+    }
+  }
+
+  assert {
+    condition     = azurerm_network_interface.vm.ip_configuration[0].public_ip_address_id == azurerm_public_ip.vm.id
+    error_message = "The Standard public IP must be attached to the NIC's primary IP configuration."
+  }
+
+  assert {
+    condition     = azurerm_network_interface.vm.ip_configuration[0].subnet_id == var.subnet_id
+    error_message = "The NIC must be connected to the workload subnet."
+  }
+
+  assert {
+    condition     = output.nic_public_ip_address_id == azurerm_public_ip.vm.id
+    error_message = "Module output must expose the NIC's public IP ID."
+  }
+}

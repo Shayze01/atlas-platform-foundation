@@ -1,49 +1,64 @@
 #!/usr/bin/env bash
-# Runs every offline check. Needs Terraform (>= 1.7); Docker and cloud-init are
-# optional and skipped if missing. Does NOT contact or change Azure.
-set -euo pipefail
-cd "$(dirname "$0")/.."
+# Runs every offline check and prints a PASS / FAIL / SKIP summary.
+# Needs Terraform (>= 1.7). Docker, cloud-init and shellcheck are optional;
+# their checks are reported as SKIP if the tool is missing.
+# Does NOT contact or change Azure.
+set -uo pipefail
+cd "$(dirname "$0")/.." || exit 1
 
-step() { echo; echo "==> $*"; }
+results=()
+failed=0
 
-step "terraform fmt -check -recursive"
-terraform fmt -check -recursive -diff
+# run_step <name> <command...>
+run_step() {
+  local name="$1"; shift
+  echo; echo "==> ${name}"
+  if "$@"; then
+    results+=("PASS | ${name}")
+  else
+    results+=("FAIL | ${name}")
+    failed=$((failed + 1))
+  fi
+}
 
-step "terraform init -backend=false"
-terraform init -backend=false -input=false >/dev/null && echo "init OK"
+skip_step() {
+  echo; echo "==> $1"; echo "SKIP: $2"
+  results+=("SKIP | $1 ($2)")
+}
 
-step "terraform validate"
-terraform validate
+docker_available() { command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; }
 
-step "terraform test (mocked provider, no Azure calls)"
-terraform test
-
-step "Render cloud-init"
-./scripts/render-cloud-init.sh
-
-step "Rendered cloud-init embeds ./app files unchanged"
-python3 scripts/check-cloud-init-files.py
+run_step "terraform fmt -check -recursive" terraform fmt -check -recursive -diff
+run_step "terraform init -backend=false" terraform init -backend=false -input=false -no-color
+run_step "terraform validate" terraform validate -no-color
+run_step "terraform test (mocked provider, no Azure calls)" terraform test -no-color
+run_step "Render cloud-init" ./scripts/render-cloud-init.sh
+run_step "Rendered cloud-init embeds ./app files unchanged" python3 scripts/check-cloud-init-files.py
 
 if command -v cloud-init >/dev/null 2>&1; then
-  step "cloud-init schema validation"
-  cloud-init schema --config-file build/cloud-init.rendered.yaml
+  run_step "cloud-init schema validation" cloud-init schema --config-file build/cloud-init.rendered.yaml
 else
-  echo "SKIP: cloud-init not installed; schema validation skipped"
+  skip_step "cloud-init schema validation" "cloud-init not installed"
 fi
 
 if command -v shellcheck >/dev/null 2>&1; then
-  step "shellcheck"
-  shellcheck app/*.sh scripts/*.sh && echo "shellcheck OK"
+  run_step "shellcheck" shellcheck app/run-container.sh scripts/*.sh
 else
-  echo "SKIP: shellcheck not installed"
+  skip_step "shellcheck" "shellcheck not installed"
 fi
 
-if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
-  step "Local web service test"
-  ./scripts/test-web-local.sh
+if docker_available; then
+  run_step "Local web service test (Docker)" ./scripts/test-web-local.sh
 else
-  echo "SKIP: Docker not available; local web service test skipped"
+  skip_step "Local web service test (Docker)" "Docker not available"
 fi
 
 echo
-echo "All available offline checks passed."
+echo "================ Summary ================"
+printf '%s\n' "${results[@]}"
+pass_count=$(printf '%s\n' "${results[@]}" | grep -c '^PASS' || true)
+skip_count=$(printf '%s\n' "${results[@]}" | grep -c '^SKIP' || true)
+echo "Passed: ${pass_count}  Failed: ${failed}  Skipped: ${skip_count}"
+echo "Azure deployment checks are NOT part of this script (see README sections 7-9)."
+
+exit $(( failed > 0 ? 1 : 0 ))

@@ -7,6 +7,9 @@ resource "azurerm_public_ip" "vm" {
   tags                = var.tags
 }
 
+# The public IP is attached to the NIC's IP configuration (instance-level
+# public IP). It provides inbound access and the VM's explicit outbound
+# connectivity (SNAT) for apt and container image pulls.
 resource "azurerm_network_interface" "vm" {
   name                = "nic-${var.name_suffix}"
   resource_group_name = var.resource_group_name

@@ -63,6 +63,11 @@ run "nsg_allows_only_admin_ip_on_ssh_and_http" {
   }
 
   assert {
+    condition     = azurerm_subnet.workload.default_outbound_access_enabled == false
+    error_message = "Subnet must not rely on implicit default outbound access."
+  }
+
+  assert {
     condition     = azurerm_network_security_group.workload.tags["Owner"] == "tester" && azurerm_virtual_network.this.tags["Project"] == "atlas-foundation"
     error_message = "Networking resources must carry the common tags."
   }

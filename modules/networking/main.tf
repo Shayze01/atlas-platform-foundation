@@ -11,6 +11,10 @@ resource "azurerm_subnet" "workload" {
   resource_group_name  = var.resource_group_name
   virtual_network_name = azurerm_virtual_network.this.name
   address_prefixes     = [var.subnet_address_prefix]
+
+  # Private subnet: no implicit Azure "default outbound access". The VM gets
+  # explicit outbound connectivity from the Standard public IP on its NIC.
+  default_outbound_access_enabled = false
 }
 
 resource "azurerm_network_security_group" "workload" {

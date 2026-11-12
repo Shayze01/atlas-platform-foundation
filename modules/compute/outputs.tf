@@ -17,3 +17,8 @@ output "private_ip_address" {
   description = "Private IPv4 address of the VM in the subnet."
   value       = azurerm_network_interface.vm.private_ip_address
 }
+
+output "nic_public_ip_address_id" {
+  description = "ID of the public IP attached to the NIC's primary IP configuration (explicit outbound path)."
+  value       = azurerm_network_interface.vm.ip_configuration[0].public_ip_address_id
+}

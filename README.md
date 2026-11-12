@@ -4,9 +4,11 @@ Milestone 1 of the **Atlas** cloud engineering portfolio: a small, secure, fully
 reproducible Azure landing spot for a containerised web service, built with
 **Terraform**, **Azure networking**, **Ubuntu Linux**, **cloud-init** and **Docker**.
 
-> **Status:** code and offline tests are complete. **No Azure deployment has been
-> performed from this repository yet.** Deployment evidence must be captured from
-> your own subscription (see [Evidence](#12-evidence-screenshots)).
+> **Status:** code and offline tests are complete (latest offline run: 9 passed,
+> 0 failed, 0 skipped - see [`docs/validation-log.md`](docs/validation-log.md)).
+> **No Azure deployment has been performed from this repository yet.**
+> Deployment evidence must be captured from your own subscription (see
+> [Evidence](#12-evidence-screenshots)).
 
 ---
 
@@ -83,8 +85,13 @@ flowchart LR
 
 Traffic flow: your workstation -> public IP -> NSG on the subnet (only your
 `/32` on ports 22/80 is allowed) -> NIC -> VM. Docker publishes the container's
-port 8080 on the VM's port 80. Outbound internet access uses Azure's default
-outbound rules so the VM can download packages and the container image.
+port 8080 on the VM's port 80.
+
+Outbound traffic (apt packages, the container base image) leaves through the
+**same Standard public IP**, which is attached to the NIC's IP configuration.
+The subnet is configured as a private subnet (`default_outbound_access_enabled
+= false`), so the design does not depend on Azure's implicit default outbound
+access. See [Outbound connectivity](#103-outbound-connectivity).
 
 ## 3. Repository layout
 
@@ -113,7 +120,8 @@ atlas-platform-foundation/
 │   ├── test-web-local.sh        # Local Docker test of / and /health
 │   ├── render-cloud-init.sh     # Renders cloud-init exactly as Terraform would
 │   ├── check-cloud-init-files.py
-│   └── connectivity-check.sh    # Post-deployment checks against the real VM
+│   ├── connectivity-check.sh    # Post-deployment checks against the real VM
+│   └── verify-cleanup.sh        # Read-only check that this project's resources are gone
 └── docs/
     ├── validation-log.md        # Output of offline checks that were actually run
     └── evidence/                # Your redacted deployment screenshots
@@ -313,31 +321,61 @@ Negative test (optional, recommended for evidence): from a different network
 ## 9. Destroy and verify cleanup
 
 ```bash
-terraform plan -destroy -out destroy.tfplan   # review: expect 11 to destroy
+terraform plan -destroy -out destroy.tfplan   # review: expect 11 to destroy, all in rg-atlas-foundation-dev
 terraform apply destroy.tfplan
 # or simply: terraform destroy
 ```
 
-Verify nothing is left (and nothing is still billing):
+Terraform only destroys what is recorded in **this project's** state file, so
+other Project Atlas resources in your subscription are not affected. Still,
+read the destroy plan and confirm every resource listed belongs to
+`rg-atlas-foundation-dev`.
+
+### Verify cleanup (scoped to this project only)
+
+Every check below targets this project's resource group or an exact resource
+name. Avoid subscription-wide queries (for example filtering by a tag or by
+`contains(name,'atlas')`), because they would also match your other Project
+Atlas resources.
 
 ```bash
-terraform state list                                        # expect no output
-az group exists --name rg-atlas-foundation-dev              # expect: false
-az resource list --tag Project=atlas-foundation --output table   # expect no rows
-az disk list --query "[?contains(name,'atlas')]" --output table  # expect no rows
-az network public-ip list --query "[?contains(name,'atlas')]" --output table  # expect no rows
+./scripts/verify-cleanup.sh            # read-only; defaults to suffix atlas-foundation-dev
+# If you changed project_name or environment: ./scripts/verify-cleanup.sh <project_name>-<environment>
 ```
+
+Or run the same checks by hand:
+
+```bash
+terraform state list                                   # expect no output
+az group exists --name rg-atlas-foundation-dev         # expect: false
+
+# Exact names - each should fail with ResourceGroupNotFound or ResourceNotFound:
+az vm show                --resource-group rg-atlas-foundation-dev --name vm-atlas-foundation-dev
+az disk show              --resource-group rg-atlas-foundation-dev --name osdisk-atlas-foundation-dev
+az network nic show       --resource-group rg-atlas-foundation-dev --name nic-atlas-foundation-dev
+az network public-ip show --resource-group rg-atlas-foundation-dev --name pip-atlas-foundation-dev
+az network nsg show       --resource-group rg-atlas-foundation-dev --name nsg-atlas-foundation-dev
+az network vnet show      --resource-group rg-atlas-foundation-dev --name vnet-atlas-foundation-dev
+```
+
+If `az group exists` returns `true`, list only what is inside this project's
+group: `az resource list --resource-group rg-atlas-foundation-dev --output table`.
 
 Notes:
 
 - Azure may automatically create a `NetworkWatcherRG` resource group with a
-  Network Watcher when you create a VNet. It is not managed by this project and
-  has no meaningful cost on its own; delete it only if you know nothing else in
-  the subscription uses it.
-- If you lost your local state file, delete everything with
-  `az group delete --name rg-atlas-foundation-dev --yes` and run the checks above.
-- Finally, review **Cost Management -> Cost analysis** in the portal a day later
-  (cost data is delayed by up to 24-48 hours).
+  Network Watcher when a VNet is created in a region. It is shared by the whole
+  subscription (including your other Atlas resources), is not managed by this
+  project, and should be left alone.
+- If you lost your local state file, first confirm the group contains only this
+  project's resources (`az resource list --resource-group rg-atlas-foundation-dev --output table`),
+  then delete just that group with `az group delete --name rg-atlas-foundation-dev`
+  and re-run the checks above.
+- Deleting the resources stops **future** charges for them. Usage already
+  incurred is still billed, and Cost Management data can lag by 24-48 hours or
+  more. A day or two later, open **Cost Management -> Cost analysis**, filter by
+  resource group `rg-atlas-foundation-dev`, and confirm no new daily cost
+  appears after the deletion date.
 
 ## 10. Resources and network rules explained
 
@@ -346,12 +384,12 @@ Notes:
 | Resource (Terraform type) | Name | Why it exists |
 | --- | --- | --- |
 | Resource group (`azurerm_resource_group`) | `rg-atlas-foundation-dev` | A dedicated container for every resource, so the project can be inspected, costed and deleted as one unit. |
-| Virtual network (`azurerm_virtual_network`) | `vnet-atlas-foundation-dev` | Private network `10.20.0.0/16` for the workload. Free. |
-| Subnet (`azurerm_subnet`) | `snet-workload` | `10.20.1.0/24` segment the VM's NIC is placed in. Room for future subnets. |
+| Virtual network (`azurerm_virtual_network`) | `vnet-atlas-foundation-dev` | Private network `10.20.0.0/16` for the workload. No charge for the VNet itself. |
+| Subnet (`azurerm_subnet`) | `snet-workload` | `10.20.1.0/24` segment the VM's NIC is placed in. Private subnet (`default_outbound_access_enabled = false`): no implicit internet egress. |
 | Network security group (`azurerm_network_security_group` + `azurerm_network_security_rule` x3) | `nsg-atlas-foundation-dev` | Stateful firewall. Rules are separate resources so each is easy to read and test. |
 | NSG association (`azurerm_subnet_network_security_group_association`) | - | Applies the NSG to the whole subnet, so any future VM in the subnet is protected too. Created before the VM. |
-| Public IP (`azurerm_public_ip`) | `pip-atlas-foundation-dev` | Standard SKU, static. Standard IPs are "secure by default": inbound is blocked unless an NSG allows it. Static keeps the same address across VM restarts. |
-| Network interface (`azurerm_network_interface`) | `nic-atlas-foundation-dev` | Connects the VM to the subnet (dynamic private IP) and attaches the public IP. |
+| Public IP (`azurerm_public_ip`) | `pip-atlas-foundation-dev` | Standard SKU, static. Standard IPs are "secure by default": inbound is blocked unless an NSG allows it. Also the VM's **explicit outbound** path (see 10.3). Static keeps the same address across VM restarts. |
+| Network interface (`azurerm_network_interface`) | `nic-atlas-foundation-dev` | Connects the VM to the subnet (dynamic private IP). Its primary IP configuration has `public_ip_address_id` set to the Standard public IP. |
 | Linux VM (`azurerm_linux_virtual_machine`) | `vm-atlas-foundation-dev` | Ubuntu Server 24.04 LTS (`Canonical/ubuntu-24_04-lts/server`). SSH key only, password auth disabled, cloud-init passed as `custom_data`, managed boot diagnostics enabled for the serial log/console. |
 | OS disk (part of the VM) | `osdisk-atlas-foundation-dev` | `Standard_LRS` (HDD) managed disk - the cheapest option; fine for a lab. |
 
@@ -386,11 +424,40 @@ Azure also adds default rules that cannot be deleted:
 | 65001 | Inbound | `AllowAzureLoadBalancerInBound` | Azure health probes are allowed. |
 | 65500 | Inbound | `DenyAllInBound` | Everything else is denied. |
 | 65000 | Outbound | `AllowVnetOutBound` | Traffic to the VNet is allowed. |
-| 65001 | Outbound | `AllowInternetOutBound` | The VM can reach the internet (apt, Docker Hub). |
+| 65001 | Outbound | `AllowInternetOutBound` | The NSG **permits** outbound internet traffic. This is a filter only; the actual route out is the public IP (10.3). |
 | 65500 | Outbound | `DenyAllOutBound` | Everything else is denied. |
 
 NSGs are **stateful**: reply traffic for an allowed connection is automatically
 allowed back, so no matching outbound rules are needed.
+
+### 10.3 Outbound connectivity
+
+Two separate things are needed for the VM to reach the internet:
+
+1. **An outbound path.** This project gives the VM explicit outbound
+   connectivity through the **Standard public IP attached to the NIC's IP
+   configuration** (`public_ip_address_id` in `modules/compute/main.tf`).
+   Outbound connections are source-NATed to that IP. Other explicit methods
+   (NAT Gateway, load balancer outbound rules) are intentionally not used
+   because of cost. Microsoft is retiring the older implicit "default outbound
+   access", so this project does not rely on it and disables it on the subnet
+   (`default_outbound_access_enabled = false` in `modules/networking/main.tf`).
+2. **An NSG that allows the traffic.** The default `AllowInternetOutBound` rule
+   does this. An NSG rule on its own does **not** provide connectivity - it only
+   filters traffic that already has a path.
+
+The offline tests check the configuration for both: the subnet has default
+outbound access disabled, and the NIC's `public_ip_address_id` equals the public
+IP's ID. Confirm it after deployment:
+
+```bash
+az network nic show -g rg-atlas-foundation-dev -n nic-atlas-foundation-dev \
+  --query "ipConfigurations[0].publicIPAddress.id" -o tsv     # ends with /pip-atlas-foundation-dev
+# On the VM - should print the VM's own public IP:
+curl -4 -s https://ifconfig.me ; echo
+```
+
+### 10.4 Changing your admin IP
 
 If your public IP changes, update `admin_source_ip_cidr` in `terraform.tfvars`
 and run `terraform apply` again. Only the two NSG rules change; the VM is not
@@ -445,6 +512,15 @@ or use **Serial console** in the portal.
 - Changes to `cloud-init/` or `app/` force the VM to be **replaced** on the next
   apply, because cloud-init only runs on first boot. `terraform plan` will show
   `forces replacement` on `custom_data`.
+
+### Outbound (apt or image pull fails)
+
+- On the VM, `curl -4 -s --max-time 10 https://ifconfig.me` should print the
+  VM's public IP. If it hangs, check the NIC still has the public IP attached
+  (command in [10.3](#103-outbound-connectivity)) and that no custom outbound
+  deny rule was added to the NSG.
+- Do not remove the public IP from the NIC: with `default_outbound_access_enabled = false`
+  the VM would then have no outbound internet path at all.
 
 ### Docker
 
@@ -516,7 +592,7 @@ Save redacted screenshots in `docs/evidence/` with these names:
 | Standard static public IPv4 | Yes, **always** until deleted | Billed hourly whether or not the VM runs. |
 | Boot diagnostics (managed storage) | Minimal | Small storage for screenshots/serial log. |
 | Outbound data transfer | Small | Inbound is free; the first 100 GB/month outbound is free at the time of writing. |
-| Resource group, VNet, subnet, NSG | No | Free. |
+| Resource group, VNet, subnet, NSG | No | No charge for these resource types themselves. |
 
 ### Indicative estimate
 
@@ -546,8 +622,11 @@ free-service terms; the public IP and other items may still be charged.
 - **Shutting down from inside Linux** (`sudo shutdown now`) leaves the VM
   *Stopped* but **still allocated, so compute is still billed**. The portal
   shows "Stopped" instead of "Stopped (deallocated)".
-- The only way to reach **zero** cost is `terraform destroy` and the cleanup
-  checks in [section 9](#9-destroy-and-verify-cleanup).
+- To stop future charges for this project's resources, run `terraform destroy`
+  and the scoped cleanup checks in [section 9](#9-destroy-and-verify-cleanup).
+  Charges already incurred remain on your bill, cost data can take 24-48 hours
+  or more to appear, and other resources in your subscription (such as other
+  Project Atlas resources) keep billing as normal.
 
 Optional: create a budget alert in **Cost Management -> Budgets** (for example
 $10/month) as a safety net.
@@ -564,7 +643,7 @@ This milestone stores state in `terraform.tfstate` in the repository folder
 - **Contains sensitive data in plain text** (your IP, public key, resource IDs,
   the full cloud-init). Never commit, share or upload it.
 - **Easy to lose.** If the file is deleted, Terraform "forgets" the resources but
-  they keep running and billing. Recover with `az group delete` (section 9).
+  they keep running and billing. Recover by deleting only this project's resource group (section 9).
 - **No history/versioning or backup.**
 
 Planned for a later milestone: an `azurerm` remote backend (Azure Storage
@@ -572,50 +651,61 @@ account with blob versioning and state locking).
 
 ## 15. Offline validation and tests
 
-Everything below runs **without an Azure account** and creates nothing:
+Everything in this section runs **without an Azure account** and creates
+nothing. One command runs all checks and ends with a PASS / FAIL / SKIP summary:
 
 ```bash
 ./scripts/validate.sh
 ```
 
-It runs, in order:
+| # | Check (step name in `validate.sh`) | What it verifies |
+| --- | --- | --- |
+| 1 | `terraform fmt -check -recursive` | Formatting of all `.tf` / `.tftest.hcl` files. |
+| 2 | `terraform init -backend=false` | Provider/module installation from the lock file, no backend. |
+| 3 | `terraform validate` | Syntax, types and provider schema. |
+| 4 | `terraform test` | 9 test runs with a **mocked azurerm provider** (listed below). |
+| 5 | Render cloud-init | Renders the template exactly as Terraform would (`build/cloud-init.rendered.yaml`). |
+| 6 | Embedded app files unchanged | The 4 app files inside cloud-init match `./app` byte-for-byte. |
+| 7 | `cloud-init schema` | The rendered cloud-init is valid (SKIP if cloud-init is not installed). |
+| 8 | `shellcheck` | `app/run-container.sh` and `scripts/*.sh` (SKIP if shellcheck is not installed). |
+| 9 | Local web service test | 10 Docker checks: `/health` 200 + JSON body, `/` 200 + title, unknown path 404, nginx version hidden, non-root user, read-only root filesystem, `HEALTHCHECK` healthy (SKIP if Docker is unavailable). |
 
-1. `terraform fmt -check -recursive`
-2. `terraform init -backend=false`
-3. `terraform validate`
-4. `terraform test` - 8 test runs with a **mocked azurerm provider**:
-   - networking module: SSH/HTTP rules allow only the `/32`, correct ports,
-     explicit Internet deny, subnet prefix, tags;
-   - compute module: password auth disabled and no password set, SSH key user,
-     Ubuntu 24.04 image, base64 `custom_data`, Standard static IP, tags;
-   - root: names/tags, rendered cloud-init content, and **rejection** of
-     `0.0.0.0/0`, `/24` ranges, IPs without `/32`, private keys and reserved
-     usernames.
-5. Renders cloud-init exactly as Terraform would and checks the embedded app
-   files match `./app` byte-for-byte.
-6. `cloud-init schema` validation of the rendered file (if cloud-init is installed).
-7. `shellcheck` of all scripts (if installed).
-8. Local Docker test (`scripts/test-web-local.sh`): builds the image with the same
-   script the VM uses and checks `/` (title text, 200), `/health` (200 + JSON),
-   unknown path (404), hidden nginx version, non-root user, read-only root
-   filesystem and Docker `HEALTHCHECK` = healthy.
+The 9 `terraform test` runs:
 
-If Docker Hub rate-limits your machine, use a mirror for the local test:
-`BASE_IMAGE=mirror.gcr.io/nginxinc/nginx-unprivileged:1.30-alpine ./scripts/validate.sh`.
+| File | Run | Checks |
+| --- | --- | --- |
+| `tests/networking.tftest.hcl` | `nsg_allows_only_admin_ip_on_ssh_and_http` | SSH/HTTP allow rules use only the `/32`, TCP 22/80, no internet-wide source, explicit Internet deny, subnet prefix, default outbound access disabled, tags. |
+| `tests/compute.tftest.hcl` | `vm_uses_ssh_keys_only` | Password auth disabled, no password, SSH key user, Ubuntu 24.04 image, base64 `custom_data`, Standard static public IP, tags. |
+| `tests/compute.tftest.hcl` | `public_ip_attached_to_nic_for_explicit_outbound` | Mocked apply: NIC `public_ip_address_id` equals the public IP ID; NIC uses the workload subnet. |
+| `tests/root.tftest.hcl` | `plan_with_valid_inputs` | Resource group name/location, all four tags, rendered cloud-init content. |
+| `tests/root.tftest.hcl` | `rejects_internet_wide_source` | `0.0.0.0/0` is rejected. |
+| `tests/root.tftest.hcl` | `rejects_ip_range_wider_than_32` | `203.0.113.0/24` is rejected. |
+| `tests/root.tftest.hcl` | `rejects_ip_without_prefix` | A bare IP without `/32` is rejected. |
+| `tests/root.tftest.hcl` | `rejects_private_key` | A pasted private key is rejected. |
+| `tests/root.tftest.hcl` | `rejects_reserved_admin_username` | `admin` is rejected as a username. |
+
+**Latest recorded result** (full output and tool versions in
+[`docs/validation-log.md`](docs/validation-log.md)): **9 passed, 0 failed,
+0 skipped**; `terraform test` 9/9 runs passed; local web test 10/10 checks
+passed. No Azure deployment checks have been run.
+
+If Docker Hub rate-limits your machine (HTTP 429), use a mirror for the local
+test: `BASE_IMAGE=mirror.gcr.io/nginxinc/nginx-unprivileged:1.30-alpine ./scripts/validate.sh`.
 
 What these tests **cannot** prove: that Azure accepts the deployment in your
 subscription/region (quota, SKU availability, policy), that the VM boots and
-cloud-init succeeds on Azure, or that the NSG behaves as expected on the real
-network. Those are verified by sections 7-9 and recorded with the evidence
-screenshots. See [`docs/validation-log.md`](docs/validation-log.md) for the
-offline checks that have actually been run.
+cloud-init succeeds on Azure, that outbound traffic actually leaves via the
+public IP, or that the NSG behaves as expected on the real network. Those are
+verified with sections 7-9 and recorded in the validation log and evidence
+screenshots.
 
 ## 16. Security notes and known limitations
 
 - HTTP only (no TLS) - acceptable here because only your `/32` can connect.
   HTTPS is a future milestone.
 - The VM has a public IP; access is restricted by the NSG rather than by a
-  private-only design with Bastion/VPN (avoided for cost).
+  private-only design with Bastion/VPN (avoided for cost). The same public IP is
+  the VM's only outbound path.
 - `admin_source_ip_cidr` supports one IPv4 address. If your ISP changes your IP,
   re-apply with the new one.
 - The container image is built on the VM from a pinned minor version
