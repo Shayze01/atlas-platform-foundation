@@ -76,7 +76,7 @@ run "rejects_ip_without_prefix" {
 run "rejects_private_key" {
   command = plan
   variables {
-    admin_ssh_public_key = "-----BEGIN OPENSSH PRIVATE KEY-----"
+    admin_ssh_public_key = "PRIVATE KEY placeholder - simulates pasting a private key"
   }
   expect_failures = [var.admin_ssh_public_key]
 }
