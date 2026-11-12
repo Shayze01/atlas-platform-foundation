@@ -41,8 +41,10 @@ else
   skip_step "cloud-init schema validation" "cloud-init not installed"
 fi
 
+run_step "Script behaviour tests (stubbed az/terraform/curl/ssh, no network)" ./tests/scripts/run-script-tests.sh
+
 if command -v shellcheck >/dev/null 2>&1; then
-  run_step "shellcheck" shellcheck app/run-container.sh scripts/*.sh
+  run_step "shellcheck" shellcheck app/run-container.sh scripts/*.sh tests/scripts/*.sh tests/scripts/stubs/*
 else
   skip_step "shellcheck" "shellcheck not installed"
 fi

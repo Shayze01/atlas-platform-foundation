@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Stub ssh for script tests.
+# SSH_SCENARIO: ok | timeout | key-denied | password-enabled | sshd-unreadable | cloud-init-error | unhealthy | probe-timeout
+echo "ssh $*" >>"${STUB_LOG:?}"
+scenario="${SSH_SCENARIO:-ok}"
+remote="${*: -1}"
+timeout_err() { echo "ssh: connect to host 203.0.113.10 port 22: Connection timed out" >&2; exit 255; }
+
+[[ "${scenario}" == timeout ]] && timeout_err
+
+if [[ "$*" == *PubkeyAuthentication=no* ]]; then
+  case "${scenario}" in
+    probe-timeout) timeout_err ;;
+    password-enabled) echo "atlasadmin@203.0.113.10: Permission denied (publickey,password)." >&2; exit 255 ;;
+    *) echo "atlasadmin@203.0.113.10: Permission denied (publickey)." >&2; exit 255 ;;
+  esac
+fi
+
+if [[ "${scenario}" == key-denied ]]; then
+  echo "atlasadmin@203.0.113.10: Permission denied (publickey)." >&2; exit 255
+fi
+
+case "${remote}" in
+  "echo atlas-key-auth-ok") echo atlas-key-auth-ok ;;
+  "cloud-init status")
+    if [[ "${scenario}" == cloud-init-error ]]; then echo "status: error"; exit 1; fi
+    echo "status: done" ;;
+  *"docker inspect"*)
+    if [[ "${scenario}" == unhealthy ]]; then echo "unhealthy"; else echo "healthy"; fi ;;
+  "sudo -n sshd -T")
+    [[ "${scenario}" == sshd-unreadable ]] && { echo "sudo: a password is required" >&2; exit 1; }
+    pw=no; [[ "${scenario}" == password-enabled ]] && pw=yes
+    printf 'port 22\npermitrootlogin no\npubkeyauthentication yes\npasswordauthentication %s\nkbdinteractiveauthentication no\n' "${pw}" ;;
+  *) echo "stub ssh: unhandled remote command: ${remote}" >&2; exit 99 ;;
+esac

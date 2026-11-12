@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Stub curl for script tests. CURL_SCENARIO: ok | health-500 | health-badbody | root-badbody | timeout | refused
+echo "curl $*" >>"${STUB_LOG:?}"
+out="" url=""
+while (( $# )); do
+  case "$1" in
+    -o) out="$2"; shift ;;
+    http*://*) url="$1" ;;
+  esac
+  shift
+done
+if [[ "${url}" == *ifconfig.me* ]]; then printf '198.51.100.7'; exit 0; fi
+scenario="${CURL_SCENARIO:-ok}"
+case "${scenario}" in
+  timeout) echo "curl: (28) Connection timed out after 10001 milliseconds" >&2; printf '000'; exit 28 ;;
+  refused) echo "curl: (7) Failed to connect to 203.0.113.10 port 80: Connection refused" >&2; printf '000'; exit 7 ;;
+esac
+code=200
+case "${url}" in
+  */health)
+    body='{"status":"ok","service":"atlas-platform-foundation"}'
+    [[ "${scenario}" == health-500 ]] && { code=500; body='<html>500 Internal Server Error</html>'; }
+    [[ "${scenario}" == health-badbody ]] && body='{"status":"starting"}' ;;
+  *)
+    body='<h1>Atlas Platform Foundation</h1>'
+    [[ "${scenario}" == root-badbody ]] && body='<h1>Welcome to nginx!</h1>' ;;
+esac
+if [[ -n "${out}" ]]; then printf '%s' "${body}" >"${out}"; else printf '%s' "${body}"; fi
+printf '%s' "${code}"

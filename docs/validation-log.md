@@ -10,7 +10,7 @@ Environment: Ubuntu 22.04.5 LTS (x86_64), Terraform v1.9.8, azurerm provider
 ShellCheck 0.11.0. The local web test used the default base image
 `nginxinc/nginx-unprivileged:1.30-alpine` from Docker Hub.
 
-### Summary: 9 passed, 0 failed, 0 skipped
+### Summary: 10 passed, 0 failed, 0 skipped
 
 | # | Check | Result | Detail |
 | --- | --- | --- | --- |
@@ -21,8 +21,9 @@ ShellCheck 0.11.0. The local web test used the default base image
 | 5 | Render cloud-init | PASS | `build/cloud-init.rendered.yaml` produced. |
 | 6 | Embedded app files unchanged | PASS | 4/4 files match `./app`. |
 | 7 | `cloud-init schema` | PASS | "Valid schema". |
-| 8 | `shellcheck` | PASS | No findings in `app/run-container.sh` and `scripts/*.sh`. |
-| 9 | Local web service test (Docker) | PASS | 10/10 checks passed. |
+| 8 | Script behaviour tests (stubs, no network) | PASS | 29/29 cases passed (13 `verify-cleanup.sh`, 16 `connectivity-check.sh`), 0 failed. |
+| 9 | `shellcheck` | PASS | No findings in `app/run-container.sh`, `scripts/*.sh`, `tests/scripts/*.sh`, `tests/scripts/stubs/*`. |
+| 10 | Local web service test (Docker) | PASS | 9/9 checks passed. |
 
 `terraform test` runs (all PASS):
 
@@ -38,6 +39,10 @@ ShellCheck 0.11.0. The local web test used the default base image
 | `tests/root.tftest.hcl` | `rejects_private_key` | PASS |
 | `tests/root.tftest.hcl` | `rejects_reserved_admin_username` | PASS |
 
+Script behaviour tests use stub `az`, `terraform`, `curl`, `ssh` and `timeout`
+commands (`tests/scripts/stubs/`) placed first on `PATH`; no Azure or network
+calls are made. Each case and its result appears in the raw output below.
+
 ## 2. Additional manual checks (executed 2026-11-12, not part of `validate.sh`)
 
 | Check | Expected | Result |
@@ -45,12 +50,10 @@ ShellCheck 0.11.0. The local web test used the default base image
 | Mutation: SSH rule source changed to `*` | `networking` test fails | PASS - test failed as expected; change reverted |
 | Mutation: `public_ip_address_id` removed from the NIC | `public_ip_attached_to_nic_for_explicit_outbound` fails | PASS - test failed as expected; change reverted |
 | Mutation: `default_outbound_access_enabled = true` | `networking` test fails | PASS - test failed as expected; change reverted |
-| `scripts/verify-cleanup.sh` with stubbed `az`/`terraform`, resources absent | Exit 0, all PASS | PASS |
-| `scripts/verify-cleanup.sh` with stubbed `az`/`terraform`, leftover public IP + state | Exit 1, 3 FAIL lines | PASS |
-| Every `az` call made by `verify-cleanup.sh` is scoped to `rg-atlas-foundation-dev` (or `az account show`) | No subscription-wide queries | PASS |
+| Script tests run against the **previous** `verify-cleanup.sh` and `connectivity-check.sh` (which treated errors as absence and always exited 0) | Tests detect the old behaviour | PASS - 1 passed, 28 failed (only the custom-suffix scoping case passed on the old code); run in a scratch copy, repository unchanged |
 
-After the mutation checks, `terraform test` was re-run on the restored code:
-9 passed, 0 failed.
+After the Terraform mutation checks, `terraform test` was re-run on the
+restored code: 9 passed, 0 failed.
 
 ## 3. Raw output of `./scripts/validate.sh`
 
@@ -110,7 +113,47 @@ PASS: /opt/atlas/app/index.html matches app/index.html
 PASS: /opt/atlas/app/run-container.sh matches app/run-container.sh
 
 ==> cloud-init schema validation
+2026-11-12 22:13:09,188 - sources[WARNING]: failed loading pickle in /var/lib/cloud/instance/obj.pkl: [Errno 13] Permission denied: '/var/lib/cloud/instance/obj.pkl'
+2026-11-12 22:13:09,190 - log_util.py[WARNING]: Failed pickling datasource to /var/lib/cloud/instance/obj.pkl
+2026-11-12 22:13:09,191 - log_util.py[WARNING]: Getting data from <class 'cloudinit.sources.DataSourceNone.DataSourceNone'> failed
+2026-11-12 22:13:09,198 - schema.py[WARNING]: datasource not detected, using default instance-data/user-data paths.
 Valid schema build/cloud-init.rendered.yaml
+
+==> Script behaviour tests (stubbed az/terraform/curl/ssh, no network)
+== verify-cleanup.sh ==
+PASS: cleanup: all resources absent -> exit 0
+PASS: cleanup: custom suffix stays scoped to its own resource group
+PASS: cleanup: remaining resource group, public IP and state -> exit 1
+PASS: cleanup: not logged in (az account show fails) -> exit 2, authentication
+PASS: cleanup: expired token on queries -> exit 2, authentication
+PASS: cleanup: AuthorizationFailed -> exit 2, permission
+PASS: cleanup: network failure -> exit 2, network
+PASS: cleanup: unexpected Azure error -> exit 2, unexpected
+PASS: cleanup: unexpected 'az group exists' output -> exit 2
+PASS: cleanup: one lookup hits a network error -> exit 2, others still PASS
+PASS: cleanup: failed 'terraform state list' is not an empty state -> exit 2
+PASS: cleanup: no state file in this folder -> exit 2
+PASS: cleanup: remaining resources take precedence over inconclusive -> exit 1
+
+== connectivity-check.sh ==
+PASS: connectivity: everything healthy -> exit 0
+PASS: connectivity: /health returns HTTP 500 -> exit 1
+PASS: connectivity: /health 200 but wrong body -> exit 1
+PASS: connectivity: landing page missing title -> exit 1
+PASS: connectivity: HTTP timeout -> exit 1
+PASS: connectivity: HTTP connection refused -> exit 1
+PASS: connectivity: SSH timeout never counts as password auth disabled -> exit 1
+PASS: connectivity: probe timeout with working key session -> exit 1
+PASS: connectivity: key rejected -> exit 1
+PASS: connectivity: password authentication enabled -> exit 1
+PASS: connectivity: sshd -T unreadable (sudo fails) -> exit 1
+PASS: connectivity: cloud-init error -> exit 1
+PASS: connectivity: container unhealthy -> exit 1
+PASS: connectivity: TCP ports closed -> exit 1
+PASS: connectivity: Terraform outputs missing -> exit 2
+PASS: connectivity: SSH key missing -> exit 2
+
+Script tests: 29 passed, 0 failed (of 29)
 
 ==> shellcheck
 
@@ -138,9 +181,10 @@ PASS | terraform test (mocked provider, no Azure calls)
 PASS | Render cloud-init
 PASS | Rendered cloud-init embeds ./app files unchanged
 PASS | cloud-init schema validation
+PASS | Script behaviour tests (stubbed az/terraform/curl/ssh, no network)
 PASS | shellcheck
 PASS | Local web service test (Docker)
-Passed: 9  Failed: 0  Skipped: 0
+Passed: 10  Failed: 0  Skipped: 0
 Azure deployment checks are NOT part of this script (see README sections 7-9).
 ```
 
@@ -155,9 +199,8 @@ results here (and screenshots in `docs/evidence/`) after you deploy:
 | `terraform apply` succeeds | README section 7 | not run |
 | `/health` returns 200 from admin IP | README section 8 | not run |
 | Landing page shows "Atlas Platform Foundation" | README section 8 | not run |
-| SSH key login works; `cloud-init status` = done | README section 8 | not run |
-| Password authentication refused | README section 8 | not run |
+| `scripts/connectivity-check.sh` exits 0 (14/14 PASS: HTTP status/body, key-authenticated SSH, `cloud-init status: done`, container healthy, effective `sshd -T` settings, only `publickey` offered) | README section 8 | not run |
 | HTTP/SSH blocked from another network | README section 8 | not run |
 | Outbound uses the VM's public IP (`curl -4 ifconfig.me` on the VM) | README section 10.3 | not run |
-| `terraform destroy` + `scripts/verify-cleanup.sh` | README section 9 | not run |
+| `terraform destroy` + `scripts/verify-cleanup.sh` exits 0 (no `INCONCLUSIVE`) | README section 9 | not run |
 | No new cost for `rg-atlas-foundation-dev` after deletion (Cost analysis, 24-48 h later) | README section 9 | not run |

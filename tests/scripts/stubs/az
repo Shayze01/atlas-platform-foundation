@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# Stub Azure CLI for script tests. Never contacts Azure.
+# AZ_SCENARIO: clean | remaining | auth | auth-expired | permission | network | unexpected | garbage | partial-network
+echo "az $*" >>"${STUB_LOG:?}"
+scenario="${AZ_SCENARIO:-clean}"
+args="$*"
+
+not_found_rg() { echo "ERROR: (ResourceGroupNotFound) Resource group 'rg-atlas-foundation-dev' could not be found." >&2; echo "Code: ResourceGroupNotFound" >&2; exit 3; }
+not_found_res() { echo "ERROR: (ResourceNotFound) The Resource '$1' under resource group 'rg-atlas-foundation-dev' was not found." >&2; echo "Code: ResourceNotFound" >&2; exit 3; }
+auth_err() { echo "ERROR: Please run 'az login' to setup account." >&2; exit 1; }
+expired_err() { echo "ERROR: AADSTS700082: The refresh token has expired due to inactivity. Please run 'az login'." >&2; exit 1; }
+perm_err() { echo "ERROR: (AuthorizationFailed) The client 'user@example.com' with object id '00000000-0000-0000-0000-000000000000' does not have authorization to perform action 'Microsoft.Resources/subscriptions/resourcegroups/read'." >&2; exit 1; }
+net_err() { echo "ERROR: HTTPSConnectionPool(host='management.azure.com', port=443): Max retries exceeded with url: /subscriptions (Caused by NewConnectionError('Failed to establish a new connection: [Errno -3] Temporary failure in name resolution'))" >&2; exit 1; }
+odd_err() { echo "ERROR: (InternalServerError) Encountered internal server error." >&2; exit 1; }
+
+case "${args}" in
+  "account show"*)
+    [[ "${scenario}" == auth ]] && auth_err
+    echo "Example Subscription"; exit 0 ;;
+  "group exists"*)
+    case "${scenario}" in
+      clean|partial-network) echo false ;;
+      remaining) echo true ;;
+      auth-expired) expired_err ;;
+      permission) perm_err ;;
+      network) net_err ;;
+      unexpected) odd_err ;;
+      garbage) echo "maybe" ;;
+    esac
+    exit 0 ;;
+  "resource list"*)
+    printf 'Name                      Type\n------------------------  ---------------------------------\npip-atlas-foundation-dev  Microsoft.Network/publicIPAddresses\n'
+    exit 0 ;;
+  "resource show"*)
+    case "${scenario}" in
+      clean|garbage) not_found_rg ;;
+      remaining)
+        if [[ "${args}" == *pip-atlas-foundation-dev* ]]; then echo '{"name":"pip-atlas-foundation-dev"}'; exit 0; fi
+        not_found_res "${args##* }" ;;
+      partial-network)
+        [[ "${args}" == *nic-atlas-foundation-dev* ]] && net_err
+        not_found_rg ;;
+      auth-expired) expired_err ;;
+      permission) perm_err ;;
+      network) net_err ;;
+      unexpected) odd_err ;;
+    esac ;;
+esac
+echo "stub az: unhandled command: ${args}" >&2
+exit 99

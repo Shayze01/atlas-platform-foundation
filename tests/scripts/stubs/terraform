@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Stub Terraform for script tests.
+# TF_STATE: empty | resources | error | nofile     TF_OUTPUT: ok | fail
+echo "terraform $*" >>"${STUB_LOG:?}"
+case "$*" in
+  "state list")
+    case "${TF_STATE:-empty}" in
+      empty) exit 0 ;;
+      resources) printf 'azurerm_resource_group.this\nmodule.compute.azurerm_public_ip.vm\n'; exit 0 ;;
+      error) printf '\033[31mError: Failed to load state: open terraform.tfstate: permission denied\033[0m\n' >&2; exit 1 ;;
+      nofile) printf '\033[31mNo state file was found!\033[0m\n' >&2; exit 1 ;;
+    esac ;;
+  "output -raw public_ip_address")
+    [[ "${TF_OUTPUT:-ok}" == fail ]] && { echo "Error: Output \"public_ip_address\" not found" >&2; exit 1; }
+    printf '203.0.113.10'; exit 0 ;;
+  "output -raw ssh_command")
+    printf 'ssh -i ~/.ssh/atlas_admin atlasadmin@203.0.113.10'; exit 0 ;;
+esac
+echo "stub terraform: unhandled: $*" >&2
+exit 99

@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Stub timeout used for the TCP port probes. TCP_SCENARIO: open | closed
+echo "timeout $*" >>"${STUB_LOG:?}"
+[[ "${TCP_SCENARIO:-open}" == open ]] && exit 0
+exit 124

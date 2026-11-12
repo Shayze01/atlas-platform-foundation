@@ -4,7 +4,7 @@ Milestone 1 of the **Atlas** cloud engineering portfolio: a small, secure, fully
 reproducible Azure landing spot for a containerised web service, built with
 **Terraform**, **Azure networking**, **Ubuntu Linux**, **cloud-init** and **Docker**.
 
-> **Status:** code and offline tests are complete (latest offline run: 9 passed,
+> **Status:** code and offline tests are complete (latest offline run: 10 passed,
 > 0 failed, 0 skipped - see [`docs/validation-log.md`](docs/validation-log.md)).
 > **No Azure deployment has been performed from this repository yet.**
 > Deployment evidence must be captured from your own subscription (see
@@ -115,6 +115,7 @@ atlas-platform-foundation/
 │   ├── index.html
 │   └── run-container.sh         # Builds and runs the container (VM and local test)
 ├── tests/                       # terraform test files (mocked provider, offline)
+│   └── scripts/                 # Stub-based tests for connectivity-check.sh and verify-cleanup.sh
 ├── scripts/
 │   ├── validate.sh              # Runs every offline check
 │   ├── test-web-local.sh        # Local Docker test of / and /health
@@ -302,11 +303,17 @@ sudo sshd -T | grep -E '^(passwordauthentication|permitrootlogin)'   # expect "n
 exit
 ```
 
-Prove password logins are refused (expect `Permission denied (publickey)`):
+The authoritative proof that password logins are disabled is the
+`sudo sshd -T` output above, read over a **successful key-authenticated**
+session. As supporting evidence, a non-key login attempt should be answered by
+the server with `Permission denied (publickey)` - only `publickey` is listed:
 
 ```bash
-ssh -o PubkeyAuthentication=no -o PreferredAuthentications=password atlasadmin@$IP
+ssh -o PubkeyAuthentication=no -o PreferredAuthentications=password,keyboard-interactive atlasadmin@$IP
 ```
+
+A timeout or `Connection refused` proves nothing about password authentication;
+it only means you could not reach SSH (see [troubleshooting](#ssh)).
 
 Or run all of the above in one go (Bash):
 
@@ -314,6 +321,19 @@ Or run all of the above in one go (Bash):
 ./scripts/connectivity-check.sh             # uses ~/.ssh/atlas_admin by default
 SSH_KEY=~/.ssh/other_key ./scripts/connectivity-check.sh
 ```
+
+The script runs 14 required checks and prints `PASS` / `FAIL` for each:
+
+| Area | Checks (all required) |
+| --- | --- |
+| TCP | Ports 22 and 80 reachable. |
+| HTTP | `GET /` returns 200 and contains "Atlas Platform Foundation"; `GET /health` returns 200 and contains `"status":"ok"`. A timeout or failed request is a FAIL. |
+| SSH key session | A key-only session (`BatchMode`, no password fallback) runs a command successfully. |
+| Inside the VM (over that session) | `cloud-init status` is exactly `status: done`; Docker reports container `atlas-web` as `healthy`; effective `sshd -T` shows `passwordauthentication no`, `kbdinteractiveauthentication no`, `permitrootlogin no`, `pubkeyauthentication yes`. If no key session was possible, each of these is a FAIL ("not verified"), never a PASS. |
+| Auth methods offered | Non-key login is answered with `Permission denied (publickey)`. Any other answer, a timeout or a failed connection is a FAIL. |
+
+Exit code `0` = all 14 passed, `1` = at least one failed, `2` = could not start
+(no Terraform outputs in this folder, or SSH key not found).
 
 Negative test (optional, recommended for evidence): from a different network
 (for example a phone on mobile data) `http://<public-ip>/` should **time out**.
@@ -343,13 +363,29 @@ Atlas resources.
 # If you changed project_name or environment: ./scripts/verify-cleanup.sh <project_name>-<environment>
 ```
 
+The script reports each check as `PASS`, `FAIL` or `INCONCLUSIVE`. A resource
+only counts as gone when Azure answers `ResourceGroupNotFound` /
+`ResourceNotFound` (or `az group exists` answers `false`). Authentication
+(`az login` needed, expired token), permission (`AuthorizationFailed`), network
+and any unexpected errors are reported as `INCONCLUSIVE` with the error
+category, and are **never** treated as "absent". A failed `terraform state list`
+(including "No state file was found" when run from the wrong folder) is also
+`INCONCLUSIVE`, not an empty state.
+
+| Exit code | Meaning |
+| --- | --- |
+| `0` | Every check confirmed absence. |
+| `1` | At least one project resource or state entry remains. |
+| `2` | Nothing remaining was found, but at least one check was inconclusive - cleanup is **not** confirmed. Fix the error (for example `az login`) and re-run. |
+
 Or run the same checks by hand:
 
 ```bash
 terraform state list                                   # expect no output
 az group exists --name rg-atlas-foundation-dev         # expect: false
 
-# Exact names - each should fail with ResourceGroupNotFound or ResourceNotFound:
+# Exact names - each must fail with ResourceGroupNotFound or ResourceNotFound.
+# Any other error (az login, AuthorizationFailed, network) means "unknown", not "gone".
 az vm show                --resource-group rg-atlas-foundation-dev --name vm-atlas-foundation-dev
 az disk show              --resource-group rg-atlas-foundation-dev --name osdisk-atlas-foundation-dev
 az network nic show       --resource-group rg-atlas-foundation-dev --name nic-atlas-foundation-dev
@@ -556,18 +592,18 @@ Save redacted screenshots in `docs/evidence/` with these names:
 
 | File | What it should show |
 | --- | --- |
-| `01-local-validate.png` | `./scripts/validate.sh` finishing with "All available offline checks passed." |
+| `01-local-validate.png` | `./scripts/validate.sh` summary ending `Passed: 10  Failed: 0  Skipped: 0` |
 | `02-terraform-plan.png` | Plan summary `Plan: 11 to add, 0 to change, 0 to destroy.` |
 | `03-terraform-apply-outputs.png` | `Apply complete!` and `terraform output` |
 | `04-portal-resource-group.png` | Resource group with its resources and tags |
 | `05-nsg-inbound-rules.png` | NSG inbound rules showing the `/32` source |
 | `06-browser-landing-page.png` | Browser at `http://<ip>/` showing "Atlas Platform Foundation" |
 | `07-health-endpoint-200.png` | `curl -i http://<ip>/health` showing `HTTP/1.1 200 OK` |
-| `08-ssh-cloud-init-docker.png` | SSH session with `cloud-init status --long` and `docker ps` (healthy) |
-| `09-password-auth-refused.png` | `Permission denied (publickey)` for a password-only attempt |
+| `08-ssh-cloud-init-docker.png` | SSH session with `cloud-init status --long`, `docker ps` (healthy) and `sudo sshd -T` showing `passwordauthentication no` |
+| `09-password-auth-refused.png` | `./scripts/connectivity-check.sh` ending `RESULT: PASS`, including `Permission denied (publickey)` for the non-key attempt |
 | `10-blocked-from-other-network.png` | Request timing out from a different network |
 | `11-terraform-destroy.png` | `Destroy complete! Resources: 11 destroyed.` |
-| `12-cleanup-verified.png` | `az group exists` -> `false` and empty `az resource list` |
+| `12-cleanup-verified.png` | `./scripts/verify-cleanup.sh` ending `RESULT: PASS` (exit 0, no `INCONCLUSIVE` lines) |
 
 **Hide sensitive information before committing screenshots:**
 
@@ -667,8 +703,9 @@ nothing. One command runs all checks and ends with a PASS / FAIL / SKIP summary:
 | 5 | Render cloud-init | Renders the template exactly as Terraform would (`build/cloud-init.rendered.yaml`). |
 | 6 | Embedded app files unchanged | The 4 app files inside cloud-init match `./app` byte-for-byte. |
 | 7 | `cloud-init schema` | The rendered cloud-init is valid (SKIP if cloud-init is not installed). |
-| 8 | `shellcheck` | `app/run-container.sh` and `scripts/*.sh` (SKIP if shellcheck is not installed). |
-| 9 | Local web service test | 10 Docker checks: `/health` 200 + JSON body, `/` 200 + title, unknown path 404, nginx version hidden, non-root user, read-only root filesystem, `HEALTHCHECK` healthy (SKIP if Docker is unavailable). |
+| 8 | Script behaviour tests | 29 stub-based cases for `verify-cleanup.sh` and `connectivity-check.sh` (listed below). |
+| 9 | `shellcheck` | `app/run-container.sh`, `scripts/*.sh`, `tests/scripts/` (SKIP if shellcheck is not installed). |
+| 10 | Local web service test | 9 Docker checks: `/health` 200 + JSON body, `/` 200 + title, unknown path 404, nginx version hidden, non-root user, read-only root filesystem, `HEALTHCHECK` healthy (SKIP if Docker is unavailable). |
 
 The 9 `terraform test` runs:
 
@@ -684,10 +721,21 @@ The 9 `terraform test` runs:
 | `tests/root.tftest.hcl` | `rejects_private_key` | A pasted private key is rejected. |
 | `tests/root.tftest.hcl` | `rejects_reserved_admin_username` | `admin` is rejected as a username. |
 
+The script behaviour tests (`tests/scripts/run-script-tests.sh`) put stub
+`az`, `terraform`, `curl`, `ssh` and `timeout` commands from
+`tests/scripts/stubs/` first on `PATH`, so nothing contacts Azure or the
+network. They check exit codes and output for:
+
+| Script | Cases |
+| --- | --- |
+| `verify-cleanup.sh` (13) | All absent (exit 0); custom suffix stays in its own resource group; remaining group/public IP/state (exit 1); not logged in, expired token, `AuthorizationFailed`, network failure, unexpected error, unexpected `az group exists` output, one lookup failing among successes, failed `terraform state list`, no state file (all exit 2, `INCONCLUSIVE`); remaining + inconclusive (exit 1). Every case also asserts each `az` call is scoped to the project resource group. |
+| `connectivity-check.sh` (16) | All healthy (exit 0); `/health` HTTP 500, `/health` wrong body, landing page without title, HTTP timeout, connection refused, SSH timeout, auth-probe timeout, key rejected, password auth enabled, `sshd -T` unreadable, cloud-init error, container unhealthy, TCP ports closed (all exit 1); missing Terraform outputs, missing SSH key (exit 2). The SSH-timeout case asserts that no SSH, cloud-init, container or password check is reported as PASS. |
+
 **Latest recorded result** (full output and tool versions in
-[`docs/validation-log.md`](docs/validation-log.md)): **9 passed, 0 failed,
-0 skipped**; `terraform test` 9/9 runs passed; local web test 10/10 checks
-passed. No Azure deployment checks have been run.
+[`docs/validation-log.md`](docs/validation-log.md)): **10 passed, 0 failed,
+0 skipped**; `terraform test` 9/9 runs passed; script behaviour tests 29/29
+cases passed; local web test 9/9 checks passed. No Azure deployment checks
+have been run.
 
 If Docker Hub rate-limits your machine (HTTP 429), use a mirror for the local
 test: `BASE_IMAGE=mirror.gcr.io/nginxinc/nginx-unprivileged:1.30-alpine ./scripts/validate.sh`.
