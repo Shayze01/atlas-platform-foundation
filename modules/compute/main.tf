@@ -62,3 +62,21 @@ resource "azurerm_linux_virtual_machine" "this" {
 
   tags = var.tags
 }
+
+# Safety net, not a substitute for cleanup: Azure stops AND deallocates the VM
+# every day at this local time. "GMT Standard Time" is UK time and follows
+# British Summer Time automatically. The public IP and OS disk keep billing.
+resource "azurerm_dev_test_global_vm_shutdown_schedule" "this" {
+  count = var.auto_shutdown_enabled ? 1 : 0
+
+  virtual_machine_id    = azurerm_linux_virtual_machine.this.id
+  location              = var.location
+  enabled               = true
+  daily_recurrence_time = var.auto_shutdown_time
+  timezone              = var.auto_shutdown_timezone
+  tags                  = var.tags
+
+  notification_settings {
+    enabled = false
+  }
+}

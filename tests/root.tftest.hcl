@@ -88,3 +88,45 @@ run "rejects_reserved_admin_username" {
   }
   expect_failures = [var.admin_username]
 }
+
+run "no_temporary_test_rule_by_default" {
+  command = plan
+
+  assert {
+    condition     = length(module.networking.test_rule_names) == 0
+    error_message = "The temporary test rule must not exist when test_source_ip_cidrs is empty."
+  }
+}
+
+run "temporary_test_rule_only_allows_listed_32s" {
+  command = plan
+  variables {
+    test_source_ip_cidrs = ["198.51.100.4/32", "198.51.100.8/32"]
+  }
+
+  assert {
+    condition     = length(module.networking.test_rule_names) == 1
+    error_message = "Expected exactly one temporary test rule."
+  }
+
+  assert {
+    condition     = toset(module.networking.test_rule_source_prefixes) == toset(["198.51.100.4/32", "198.51.100.8/32"])
+    error_message = "The temporary rule must allow only the listed /32 sources."
+  }
+}
+
+run "rejects_test_source_wider_than_32" {
+  command = plan
+  variables {
+    test_source_ip_cidrs = ["198.51.100.0/24"]
+  }
+  expect_failures = [var.test_source_ip_cidrs]
+}
+
+run "rejects_invalid_auto_shutdown_time" {
+  command = plan
+  variables {
+    auto_shutdown_time = "2:00"
+  }
+  expect_failures = [var.auto_shutdown_time]
+}

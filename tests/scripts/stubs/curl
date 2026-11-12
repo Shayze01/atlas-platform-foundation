@@ -9,7 +9,7 @@ while (( $# )); do
   esac
   shift
 done
-if [[ "${url}" == *ifconfig.me* ]]; then printf '198.51.100.7'; exit 0; fi
+if [[ "${url}" == *ifconfig.me* || "${url}" == *api.ipify.org* ]]; then printf '198.51.100.7'; exit 0; fi
 scenario="${CURL_SCENARIO:-ok}"
 case "${scenario}" in
   timeout) echo "curl: (28) Connection timed out after 10001 milliseconds" >&2; printf '000'; exit 28 ;;

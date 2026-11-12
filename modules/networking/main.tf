@@ -54,6 +54,25 @@ resource "azurerm_network_security_rule" "allow_http_from_admin" {
   network_security_group_name = azurerm_network_security_group.workload.name
 }
 
+# Temporary testing access. Only created when test_source_ip_cidrs is not empty;
+# applying with an empty list deletes the rule.
+resource "azurerm_network_security_rule" "allow_test_sources" {
+  count = length(var.test_source_ip_cidrs) > 0 ? 1 : 0
+
+  name                        = "Allow-SSH-HTTP-From-Test-Temporary"
+  description                 = "TEMPORARY: SSH and HTTP from approved single-host test sources. Remove after testing."
+  priority                    = 120
+  direction                   = "Inbound"
+  access                      = "Allow"
+  protocol                    = "Tcp"
+  source_port_range           = "*"
+  destination_port_ranges     = ["22", "80"]
+  source_address_prefixes     = var.test_source_ip_cidrs
+  destination_address_prefix  = var.subnet_address_prefix
+  resource_group_name         = var.resource_group_name
+  network_security_group_name = azurerm_network_security_group.workload.name
+}
+
 # Azure's built-in rule 65500 already denies inbound Internet traffic. This
 # explicit rule documents that intent and shows up clearly in the portal.
 resource "azurerm_network_security_rule" "deny_internet_inbound" {

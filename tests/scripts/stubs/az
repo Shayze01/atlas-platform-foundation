@@ -14,6 +14,26 @@ net_err() { echo "ERROR: HTTPSConnectionPool(host='management.azure.com', port=4
 odd_err() { echo "ERROR: (InternalServerError) Encountered internal server error." >&2; exit 1; }
 
 case "${args}" in
+  "vm run-command invoke"*)
+    # RC_SCENARIO: ok | fail | outbound-mismatch | password-enabled | cloud-init-running | wrong-key | unhealthy
+    rc="${RC_SCENARIO:-ok}"
+    [[ "${rc}" == fail ]] && { echo "ERROR: (Conflict) Run command extension execution is in progress." >&2; exit 1; }
+    ci="status: done"; [[ "${rc}" == cloud-init-running ]] && ci="status: running"
+    health=healthy; [[ "${rc}" == unhealthy ]] && health=unhealthy
+    pw=no; [[ "${rc}" == password-enabled ]] && pw=yes
+    out=203.0.113.10; [[ "${rc}" == outbound-mismatch ]] && out=198.51.100.99
+    fp="${STUB_KEY_FP:-SHA256:none}"; [[ "${rc}" == wrong-key ]] && fp="SHA256:someoneelse"
+    printf 'Enable succeeded: \n[stdout]\nCLOUD_INIT=%s\nCONTAINER_HEALTH=%s\nLOCAL_HEALTH_CODE=200\nLOCAL_HEALTH_BODY={"status":"ok","service":"atlas-platform-foundation"}\nSSHD_permitrootlogin=no\nSSHD_pubkeyauthentication=yes\nSSHD_passwordauthentication=%s\nSSHD_kbdinteractiveauthentication=no\nAUTHORIZED_KEY_FPS=%s\nOUTBOUND_IP=%s\n\n[stderr]\n\n' "${ci}" "${health}" "${pw}" "${fp}" "${out}"
+    exit 0 ;;
+  "network nsg rule list"*)
+    # NSG_SCENARIO: final | temp-present | error
+    case "${NSG_SCENARIO:-final}" in
+      error) perm_err ;;
+    esac
+    printf 'Allow-SSH-From-Admin\tAllow\t198.51.100.20/32\t\t22\nAllow-HTTP-From-Admin\tAllow\t198.51.100.20/32\t\t80\n'
+    [[ "${NSG_SCENARIO:-final}" == temp-present ]] && printf 'Allow-SSH-HTTP-From-Test-Temporary\tAllow\t\t192.0.2.44/32,192.0.2.88/32\t\n'
+    printf 'Deny-Internet-Inbound\tDeny\tInternet\t\t*\n'
+    exit 0 ;;
   "account show"*)
     [[ "${scenario}" == auth ]] && auth_err
     echo "Example Subscription"; exit 0 ;;

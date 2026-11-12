@@ -22,3 +22,11 @@ output "nic_public_ip_address_id" {
   description = "ID of the public IP attached to the NIC's primary IP configuration (explicit outbound path)."
   value       = azurerm_network_interface.vm.ip_configuration[0].public_ip_address_id
 }
+
+output "auto_shutdown_schedule" {
+  description = "Auto-shutdown time and time zone (null when disabled)."
+  value = var.auto_shutdown_enabled ? {
+    time     = azurerm_dev_test_global_vm_shutdown_schedule.this[0].daily_recurrence_time
+    timezone = azurerm_dev_test_global_vm_shutdown_schedule.this[0].timezone
+  } : null
+}

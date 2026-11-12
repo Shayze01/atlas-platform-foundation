@@ -13,6 +13,10 @@ case "$*" in
   "output -raw public_ip_address")
     [[ "${TF_OUTPUT:-ok}" == fail ]] && { echo "Error: Output \"public_ip_address\" not found" >&2; exit 1; }
     printf '203.0.113.10'; exit 0 ;;
+  "output -raw resource_group_name")
+    printf 'rg-atlas-foundation-dev'; exit 0 ;;
+  "output -raw vm_name")
+    printf 'vm-atlas-foundation-dev'; exit 0 ;;
   "output -raw ssh_command")
     printf 'ssh -i ~/.ssh/atlas_admin atlasadmin@203.0.113.10'; exit 0 ;;
 esac

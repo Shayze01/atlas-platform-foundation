@@ -86,6 +86,13 @@ run "public_ip_attached_to_nic_for_explicit_outbound" {
     }
   }
 
+  override_resource {
+    target = azurerm_linux_virtual_machine.this
+    values = {
+      id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-atlas-foundation-test/providers/Microsoft.Compute/virtualMachines/vm-atlas-foundation-test"
+    }
+  }
+
   assert {
     condition     = azurerm_network_interface.vm.ip_configuration[0].public_ip_address_id == azurerm_public_ip.vm.id
     error_message = "The Standard public IP must be attached to the NIC's primary IP configuration."
@@ -99,5 +106,43 @@ run "public_ip_attached_to_nic_for_explicit_outbound" {
   assert {
     condition     = output.nic_public_ip_address_id == azurerm_public_ip.vm.id
     error_message = "Module output must expose the NIC's public IP ID."
+  }
+}
+
+run "daily_auto_shutdown_at_0200_uk_time" {
+  command = plan
+
+  module {
+    source = "./modules/compute"
+  }
+
+  assert {
+    condition     = length(azurerm_dev_test_global_vm_shutdown_schedule.this) == 1
+    error_message = "Expected one auto-shutdown schedule by default."
+  }
+
+  assert {
+    condition = (
+      azurerm_dev_test_global_vm_shutdown_schedule.this[0].daily_recurrence_time == "0200" &&
+      azurerm_dev_test_global_vm_shutdown_schedule.this[0].timezone == "GMT Standard Time" &&
+      azurerm_dev_test_global_vm_shutdown_schedule.this[0].enabled == true
+    )
+    error_message = "Auto-shutdown must be enabled daily at 02:00 UK time (GMT Standard Time, follows BST)."
+  }
+}
+
+run "auto_shutdown_can_be_disabled" {
+  command = plan
+
+  module {
+    source = "./modules/compute"
+  }
+  variables {
+    auto_shutdown_enabled = false
+  }
+
+  assert {
+    condition     = length(azurerm_dev_test_global_vm_shutdown_schedule.this) == 0
+    error_message = "No schedule expected when auto_shutdown_enabled = false."
   }
 }

@@ -84,6 +84,43 @@ variable "admin_source_ip_cidr" {
   }
 }
 
+variable "test_source_ip_cidrs" {
+  description = "Optional, temporary extra single-host IPv4 sources (/32) allowed to reach SSH (22) and HTTP (80) for deployment testing. Leave empty (the default) for normal use and remove entries as soon as testing ends."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for cidr in var.test_source_ip_cidrs :
+      can(regex("^((25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])/32$", cidr)) && cidr != "0.0.0.0/32"
+    ]) && length(var.test_source_ip_cidrs) <= 4
+    error_message = "test_source_ip_cidrs may hold at most 4 entries, each a single IPv4 address with a /32 suffix."
+  }
+}
+
+variable "auto_shutdown_enabled" {
+  description = "Daily auto-shutdown (stop + deallocate) of the VM as a safety net against forgotten cleanup. Public IP and disk still bill while deallocated."
+  type        = bool
+  default     = true
+}
+
+variable "auto_shutdown_time" {
+  description = "Daily auto-shutdown time as HHMM (24-hour) in auto_shutdown_timezone, e.g. \"0200\"."
+  type        = string
+  default     = "0200"
+
+  validation {
+    condition     = can(regex("^([01][0-9]|2[0-3])[0-5][0-9]$", var.auto_shutdown_time))
+    error_message = "auto_shutdown_time must be HHMM in 24-hour format, e.g. \"0200\"."
+  }
+}
+
+variable "auto_shutdown_timezone" {
+  description = "Windows time zone ID for auto-shutdown. \"GMT Standard Time\" is UK local time (GMT/BST)."
+  type        = string
+  default     = "GMT Standard Time"
+}
+
 variable "vnet_address_space" {
   description = "Address space for the virtual network."
   type        = string

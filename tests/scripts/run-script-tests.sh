@@ -152,6 +152,58 @@ has 'ERROR: could not read a valid'; lacks 'PASS'; done_case
 run_case "connectivity: SSH key missing -> exit 2" 2 connectivity-check.sh SSH_KEY="${WORK}/missing_key"
 has 'ERROR: SSH private key not found'; done_case
 
+echo; echo "== azure-validate.sh =="
+
+PUBKEY="${WORK}/admin.pub"
+echo "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKAhnnlI7ScyqxeIK1AysQ0aqybx6fYKZbROGFSh78TQ atlas-test-only" >"${PUBKEY}"
+STUB_KEY_FP="$(ssh-keygen -lf "${PUBKEY}" | awk '{print $2}')"
+export STUB_KEY_FP
+
+run_case "azure-validate public: healthy -> exit 0" 0 azure-validate.sh -- public
+count '^PASS: ' 5; lacks 'FAIL'; done_case
+
+run_case "azure-validate public: HTTP timeout -> exit 1" 1 azure-validate.sh CURL_SCENARIO=timeout -- public
+count 'FAIL: GET /(health)? ?: ?request failed|FAIL: GET / ?.*request failed' 2; done_case
+
+run_case "azure-validate public: SSH timeout is not proof -> exit 1" 1 azure-validate.sh SSH_SCENARIO=timeout -- public
+has 'FAIL: inconclusive - no SSH authentication answer'; lacks 'refuses non-key'; done_case
+
+run_case "azure-validate public: password offered -> exit 1" 1 azure-validate.sh SSH_SCENARIO=password-enabled -- public
+has 'FAIL: SSH server offers other methods'; done_case
+
+run_case "azure-validate in-vm: healthy, key installed, outbound via public IP -> exit 0" 0 azure-validate.sh ADMIN_PUBKEY_FILE="${PUBKEY}" -- in-vm
+count '^PASS: ' 10; lacks 'FAIL'; has 'outbound traffic leaves via'; done_case
+
+run_case "azure-validate in-vm: Run Command error never passes -> exit 1" 1 azure-validate.sh RC_SCENARIO=fail -- in-vm
+has 'FAIL: Azure Run Command failed'; lacks 'PASS'; done_case
+
+run_case "azure-validate in-vm: outbound IP mismatch -> exit 1" 1 azure-validate.sh RC_SCENARIO=outbound-mismatch -- in-vm
+has 'FAIL: in-VM: outbound'; done_case
+
+run_case "azure-validate in-vm: password auth enabled -> exit 1" 1 azure-validate.sh RC_SCENARIO=password-enabled -- in-vm
+has 'FAIL: in-VM: effective sshd: password'; done_case
+
+run_case "azure-validate in-vm: cloud-init still running -> exit 1" 1 azure-validate.sh RC_SCENARIO=cloud-init-running -- in-vm
+has 'FAIL: in-VM: cloud-init finished'; done_case
+
+run_case "azure-validate in-vm: container unhealthy -> exit 1" 1 azure-validate.sh RC_SCENARIO=unhealthy -- in-vm
+has 'FAIL: in-VM: container atlas-web healthy'; done_case
+
+run_case "azure-validate in-vm: admin key not installed -> exit 1" 1 azure-validate.sh ADMIN_PUBKEY_FILE="${PUBKEY}" RC_SCENARIO=wrong-key -- in-vm
+has 'not in authorized_keys'; done_case
+
+run_case "azure-validate blocked: rules final, HTTP/SSH time out -> exit 0" 0 azure-validate.sh EXPECTED_ADMIN_CIDR=198.51.100.20/32 CURL_SCENARIO=timeout TCP_SCENARIO=closed -- blocked
+count '^PASS: ' 3; lacks 'FAIL'; done_case
+
+run_case "azure-validate blocked: temporary rule still present -> exit 1" 1 azure-validate.sh EXPECTED_ADMIN_CIDR=198.51.100.20/32 NSG_SCENARIO=temp-present CURL_SCENARIO=timeout TCP_SCENARIO=closed -- blocked
+has 'FAIL: NSG rules differ'; done_case
+
+run_case "azure-validate blocked: HTTP still reachable -> exit 1" 1 azure-validate.sh EXPECTED_ADMIN_CIDR=198.51.100.20/32 TCP_SCENARIO=closed -- blocked
+has 'FAIL: HTTP from this machine still connects'; done_case
+
+run_case "azure-validate blocked: NSG read error is not a pass -> exit 1" 1 azure-validate.sh EXPECTED_ADMIN_CIDR=198.51.100.20/32 NSG_SCENARIO=error CURL_SCENARIO=timeout TCP_SCENARIO=closed -- blocked
+has 'FAIL: could not list NSG rules'; done_case
+
 echo
 echo "Script tests: $((cases - case_failures)) passed, ${case_failures} failed (of ${cases})"
 exit $(( case_failures > 0 ? 1 : 0 ))

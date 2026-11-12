@@ -13,6 +13,7 @@ module "networking" {
   vnet_address_space    = var.vnet_address_space
   subnet_address_prefix = var.subnet_address_prefix
   admin_source_ip_cidr  = var.admin_source_ip_cidr
+  test_source_ip_cidrs  = var.test_source_ip_cidrs
   tags                  = local.common_tags
 }
 
@@ -27,7 +28,11 @@ module "compute" {
   admin_username       = var.admin_username
   admin_ssh_public_key = trimspace(var.admin_ssh_public_key)
   custom_data          = local.cloud_init
-  tags                 = local.common_tags
+
+  auto_shutdown_enabled  = var.auto_shutdown_enabled
+  auto_shutdown_time     = var.auto_shutdown_time
+  auto_shutdown_timezone = var.auto_shutdown_timezone
+  tags                   = local.common_tags
 
   # Make sure the NSG is attached to the subnet before the VM boots and
   # cloud-init starts, so the VM is never reachable without the NSG.

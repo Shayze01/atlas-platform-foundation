@@ -64,3 +64,21 @@ variable "tags" {
   description = "Tags applied to every taggable resource."
   type        = map(string)
 }
+
+variable "auto_shutdown_enabled" {
+  description = "Create a daily auto-shutdown (deallocate) schedule for the VM."
+  type        = bool
+  default     = true
+}
+
+variable "auto_shutdown_time" {
+  description = "Daily auto-shutdown time, HHMM in auto_shutdown_timezone."
+  type        = string
+  default     = "0200"
+}
+
+variable "auto_shutdown_timezone" {
+  description = "Windows time zone ID for the auto-shutdown schedule."
+  type        = string
+  default     = "GMT Standard Time"
+}

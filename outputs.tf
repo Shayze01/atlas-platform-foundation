@@ -27,3 +27,8 @@ output "health_url" {
   description = "Health endpoint URL; should return HTTP 200."
   value       = "http://${module.compute.public_ip_address}/health"
 }
+
+output "auto_shutdown_schedule" {
+  description = "Daily auto-shutdown (deallocate) time and time zone, or null if disabled."
+  value       = module.compute.auto_shutdown_schedule
+}

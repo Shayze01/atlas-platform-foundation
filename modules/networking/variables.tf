@@ -28,6 +28,12 @@ variable "admin_source_ip_cidr" {
   type        = string
 }
 
+variable "test_source_ip_cidrs" {
+  description = "Temporary extra /32 sources allowed to reach SSH and HTTP during testing. Empty = no rule."
+  type        = list(string)
+  default     = []
+}
+
 variable "tags" {
   description = "Tags applied to every taggable resource."
   type        = map(string)
