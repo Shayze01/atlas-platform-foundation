@@ -10,6 +10,9 @@
 #            sshd configuration, installed admin key fingerprint and outbound IP.
 #   blocked  After the temporary test rule is removed: NSG rules must be exactly
 #            the intended set, and HTTP/SSH from this machine must no longer connect.
+#            Only a connect-phase timeout counts as "blocked" (an NSG deny silently
+#            drops packets). Refused/unreachable connections, probe tool errors and a
+#            failed control request are INCONCLUSIVE, never PASS.
 #
 # None of these is a key-based SSH login test; that needs the private key and is
 # done with scripts/connectivity-check.sh from the administrator's laptop.
@@ -19,7 +22,8 @@
 #   EXPECTED_ADMIN_CIDR  admin /32 expected on the SSH/HTTP rules (blocked)
 #   CONNECT_TIMEOUT, HTTP_TIMEOUT  seconds (default 10)
 #
-# Exit codes: 0 all checks passed, 1 a check failed, 2 could not start.
+# Exit codes: 0 all checks passed, 1 a check failed, 2 could not start or a check
+# was inconclusive (and none failed).
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 2
 
@@ -30,8 +34,10 @@ CONTAINER_NAME="atlas-web"
 
 passed=0
 failed=0
+inconclusive=0
 pass() { echo "PASS: $1"; passed=$((passed + 1)); }
 fail() { echo "FAIL: $1"; failed=$((failed + 1)); }
+inconc() { echo "INCONCLUSIVE: $1"; inconclusive=$((inconclusive + 1)); }
 WORK="$(mktemp -d)"
 trap 'rm -rf "${WORK}"' EXIT
 first_line() { head -n 1 "$1" 2>/dev/null | tr -d '\r'; }
@@ -40,6 +46,19 @@ case "${MODE}" in
   public|in-vm|blocked) ;;
   *) echo "Usage: $0 public|in-vm|blocked"; exit 2 ;;
 esac
+if (( $# > 1 )); then echo "Usage: $0 public|in-vm|blocked (unexpected argument '$2')"; exit 2; fi
+for t in CONNECT_TIMEOUT HTTP_TIMEOUT; do
+  if [[ ! "${!t}" =~ ^[1-9][0-9]{0,2}$ ]]; then echo "ERROR: ${t} must be a whole number of seconds (1-999), got '${!t}'"; exit 2; fi
+done
+required_tools=(terraform curl)
+case "${MODE}" in
+  public)  required_tools+=(ssh) ;;
+  in-vm)   required_tools+=(az ssh-keygen) ;;
+  blocked) required_tools+=(az timeout) ;;
+esac
+for t in "${required_tools[@]}"; do
+  command -v "${t}" >/dev/null 2>&1 || { echo "ERROR: required tool '${t}' not found on PATH"; exit 2; }
+done
 
 tf_out() {
   local v
@@ -135,8 +154,48 @@ SCRIPT
 fi
 
 # ------------------------------------------------------------------ blocked
+# Classify an HTTP probe: only a timeout before the TCP connection was made is
+# evidence of an NSG drop. "Operation timed out ... bytes received" means it connected.
+classify_http_probe() { # rc stderr-file
+  local rc="$1" msg; msg="$(first_line "$2")"
+  case "${rc}" in
+    0) fail "HTTP from this machine still connects; access is NOT blocked" ;;
+    28)
+      if grep -qE 'Connection timed out|Failed to connect.*Timeout was reached|Connection timeout' <<<"${msg}"; then
+        pass "HTTP from this machine no longer connects (connect timed out: dropped, consistent with the NSG deny)"
+      else
+        fail "HTTP timed out AFTER connecting; access is NOT blocked (${msg})"
+      fi ;;
+    7)
+      if grep -qi 'refused' <<<"${msg}"; then
+        inconc "HTTP connection refused - a host answered, which an NSG deny would not do (${msg})"
+      else
+        inconc "HTTP probe could not connect for a reason other than a drop (${msg})"
+      fi ;;
+    *) inconc "HTTP probe error (curl exit ${rc}: ${msg:-no message}) - not evidence of blocking" ;;
+  esac
+}
+
+classify_tcp_probe() { # rc stderr-file
+  local rc="$1" msg; msg="$(grep -v '^$' "$2" 2>/dev/null | tail -n 1 | tr -d '\r')"
+  case "${rc}" in
+    0) fail "TCP 22 from this machine still connects; access is NOT blocked" ;;
+    124) pass "TCP 22 from this machine no longer connects (connect timed out after ${CONNECT_TIMEOUT}s: dropped, consistent with the NSG deny)" ;;
+    1)
+      if grep -qi 'refused' <<<"${msg}"; then
+        inconc "TCP 22 connection refused - a host answered, which an NSG deny would not do (${msg})"
+      else
+        inconc "TCP 22 probe could not connect for a reason other than a drop (${msg:-no message})"
+      fi ;;
+    *) inconc "TCP 22 probe error (exit ${rc}: ${msg:-no message}) - not evidence of blocking" ;;
+  esac
+}
+
 if [[ "${MODE}" == blocked ]]; then
-  if [[ ! "${EXPECTED_ADMIN_CIDR:-}" =~ /32$ ]]; then echo "ERROR: set EXPECTED_ADMIN_CIDR to the admin /32"; exit 2; fi
+  octet='(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])'
+  if [[ ! "${EXPECTED_ADMIN_CIDR:-}" =~ ^${octet}(\.${octet}){3}/32$ ]]; then
+    echo "ERROR: set EXPECTED_ADMIN_CIDR to the admin IPv4 /32 (got '${EXPECTED_ADMIN_CIDR:-}')"; exit 2
+  fi
   if az network nsg rule list -g "${RG}" --nsg-name "${NSG}" \
        --query "sort_by([], &priority)[].[name, access, sourceAddressPrefix, join(',', sourceAddressPrefixes), destinationPortRange]" \
        -o tsv >"${WORK}/rules" 2>"${WORK}/err"; then
@@ -148,22 +207,23 @@ if [[ "${MODE}" == blocked ]]; then
       fail "NSG rules differ from the intended set"
     fi
   else
-    fail "could not list NSG rules: $(first_line "${WORK}/err")"
+    inconc "could not list NSG rules: $(first_line "${WORK}/err")"
   fi
-  curl -sS -o /dev/null --max-time "${HTTP_TIMEOUT}" "http://${IP}/health" >/dev/null 2>"${WORK}/err"
-  rc=$?
-  case "${rc}" in
-    0) fail "HTTP from this machine still connects; access is NOT blocked" ;;
-    7|28) pass "HTTP from this machine no longer connects (curl exit ${rc})" ;;
-    *) fail "HTTP check inconclusive (curl exit ${rc}: $(first_line "${WORK}/err"))" ;;
-  esac
-  if timeout "${CONNECT_TIMEOUT}" bash -c "exec 3<>/dev/tcp/${IP}/22" 2>/dev/null; then
-    fail "TCP 22 from this machine still connects; access is NOT blocked"
+
+  # Control: this machine must be able to reach the Internet, otherwise a timeout
+  # towards the VM says nothing about the NSG.
+  if control="$(curl -4 -sS --max-time "${HTTP_TIMEOUT}" https://api.ipify.org 2>"${WORK}/err")" && [[ -n "${control}" ]]; then
+    echo "Control: this machine reaches the Internet as ${control}"
+    curl -sS -o /dev/null --connect-timeout "${CONNECT_TIMEOUT}" --max-time "${HTTP_TIMEOUT}" "http://${IP}/health" >/dev/null 2>"${WORK}/err"
+    classify_http_probe $? "${WORK}/err"
+    timeout "${CONNECT_TIMEOUT}" bash -c "exec 3<>/dev/tcp/${IP}/22" 2>"${WORK}/err"
+    classify_tcp_probe $? "${WORK}/err"
   else
-    pass "TCP 22 from this machine no longer connects"
+    inconc "control request to https://api.ipify.org failed ($(first_line "${WORK}/err")); probe timeouts would not prove blocking, so HTTP/TCP probes were not evaluated"
   fi
 fi
 
 echo
-echo "RESULT (${MODE}): ${passed} passed, ${failed} failed"
+echo "RESULT (${MODE}): ${passed} passed, ${failed} failed, ${inconclusive} inconclusive"
 (( failed == 0 )) || exit 1
+(( inconclusive == 0 )) || exit 2

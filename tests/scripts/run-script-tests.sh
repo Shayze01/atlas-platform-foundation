@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Reproducible tests for scripts/verify-cleanup.sh and scripts/connectivity-check.sh.
+# Reproducible tests for scripts/verify-cleanup.sh, scripts/connectivity-check.sh and
+# scripts/azure-validate.sh.
 # Uses stub az / terraform / curl / ssh / timeout commands from tests/scripts/stubs,
 # placed first on PATH. Nothing contacts Azure or any network host.
 set -uo pipefail
@@ -38,6 +39,17 @@ note() { current_ok=false; echo "    - $1"; }
 has()   { grep -qE -- "$1" <<<"${OUT}" || note "output missing /$1/"; }
 lacks() { if grep -qE -- "$1" <<<"${OUT}"; then note "output unexpectedly matches /$1/"; fi; }
 count() { local n; n="$(grep -cE -- "$1" <<<"${OUT}" || true)"; [[ "${n}" == "$2" ]] || note "expected $2 lines matching /$1/, got ${n}"; }
+# path_without <tool>: a PATH directory holding the system tools and stubs, minus <tool>.
+path_without() {
+  local dir="${WORK}/path-without-$1" f
+  if [[ ! -d "${dir}" ]]; then
+    mkdir -p "${dir}"
+    for f in /usr/bin/* /bin/*; do [[ -x "${f}" ]] && ln -sf "${f}" "${dir}/" 2>/dev/null; done
+    for f in "${STUBS}"/*; do ln -sf "${f}" "${dir}/"; done
+    rm -f "${dir:?}/$1"
+  fi
+  printf '%s' "${dir}"
+}
 az_scoped() {
   local rg="${1:-rg-atlas-foundation-dev}" bad
   bad="$(grep '^az ' "${STUB_LOG}" | grep -v '^az account show' | grep -v -- "${rg}" || true)"
@@ -201,8 +213,58 @@ has 'FAIL: NSG rules differ'; done_case
 run_case "azure-validate blocked: HTTP still reachable -> exit 1" 1 azure-validate.sh EXPECTED_ADMIN_CIDR=198.51.100.20/32 TCP_SCENARIO=closed -- blocked
 has 'FAIL: HTTP from this machine still connects'; done_case
 
-run_case "azure-validate blocked: NSG read error is not a pass -> exit 1" 1 azure-validate.sh EXPECTED_ADMIN_CIDR=198.51.100.20/32 NSG_SCENARIO=error CURL_SCENARIO=timeout TCP_SCENARIO=closed -- blocked
-has 'FAIL: could not list NSG rules'; done_case
+run_case "azure-validate blocked: NSG read error is inconclusive, not a pass -> exit 2" 2 azure-validate.sh EXPECTED_ADMIN_CIDR=198.51.100.20/32 NSG_SCENARIO=error CURL_SCENARIO=timeout TCP_SCENARIO=closed -- blocked
+has 'INCONCLUSIVE: could not list NSG rules'; lacks 'PASS: NSG'; done_case
+
+run_case "azure-validate blocked: curl 8 connect-timeout wording counts as dropped -> exit 0" 0 azure-validate.sh EXPECTED_ADMIN_CIDR=198.51.100.20/32 CURL_SCENARIO=timeout-curl8 TCP_SCENARIO=closed -- blocked
+count '^PASS: ' 3; lacks 'FAIL|INCONCLUSIVE'; done_case
+
+run_case "azure-validate blocked: TCP 22 still connects -> exit 1" 1 azure-validate.sh EXPECTED_ADMIN_CIDR=198.51.100.20/32 CURL_SCENARIO=timeout TCP_SCENARIO=open -- blocked
+has 'FAIL: TCP 22 from this machine still connects'; done_case
+
+run_case "azure-validate blocked: HTTP timeout after connecting is not blocked -> exit 1" 1 azure-validate.sh EXPECTED_ADMIN_CIDR=198.51.100.20/32 CURL_SCENARIO=op-timeout TCP_SCENARIO=closed -- blocked
+has 'FAIL: HTTP timed out AFTER connecting'; lacks 'PASS: HTTP'; done_case
+
+run_case "azure-validate blocked: HTTP connection refused is inconclusive -> exit 2" 2 azure-validate.sh EXPECTED_ADMIN_CIDR=198.51.100.20/32 CURL_SCENARIO=refused TCP_SCENARIO=closed -- blocked
+has 'INCONCLUSIVE: HTTP connection refused'; lacks 'PASS: HTTP'; done_case
+
+run_case "azure-validate blocked: HTTP network unreachable is inconclusive -> exit 2" 2 azure-validate.sh EXPECTED_ADMIN_CIDR=198.51.100.20/32 CURL_SCENARIO=unreachable TCP_SCENARIO=closed -- blocked
+has 'INCONCLUSIVE: HTTP probe could not connect'; lacks 'PASS: HTTP'; done_case
+
+run_case "azure-validate blocked: curl invalid option is inconclusive -> exit 2" 2 azure-validate.sh EXPECTED_ADMIN_CIDR=198.51.100.20/32 CURL_SCENARIO=badopt TCP_SCENARIO=closed -- blocked
+has 'INCONCLUSIVE: HTTP probe error \(curl exit 2'; lacks 'PASS: HTTP'; done_case
+
+run_case "azure-validate blocked: TCP 22 refused is inconclusive -> exit 2" 2 azure-validate.sh EXPECTED_ADMIN_CIDR=198.51.100.20/32 CURL_SCENARIO=timeout TCP_SCENARIO=refused -- blocked
+has 'INCONCLUSIVE: TCP 22 connection refused'; lacks 'PASS: TCP'; done_case
+
+run_case "azure-validate blocked: TCP 22 network unreachable is inconclusive -> exit 2" 2 azure-validate.sh EXPECTED_ADMIN_CIDR=198.51.100.20/32 CURL_SCENARIO=timeout TCP_SCENARIO=unreachable -- blocked
+has 'INCONCLUSIVE: TCP 22 probe could not connect'; lacks 'PASS: TCP'; done_case
+
+run_case "azure-validate blocked: timeout tool error (exit 125) is inconclusive -> exit 2" 2 azure-validate.sh EXPECTED_ADMIN_CIDR=198.51.100.20/32 CURL_SCENARIO=timeout TCP_SCENARIO=badopt -- blocked
+has 'INCONCLUSIVE: TCP 22 probe error \(exit 125'; lacks 'PASS: TCP'; done_case
+
+run_case "azure-validate blocked: failed control request -> probes not evaluated, exit 2" 2 azure-validate.sh EXPECTED_ADMIN_CIDR=198.51.100.20/32 CURL_CONTROL=fail CURL_SCENARIO=timeout TCP_SCENARIO=closed -- blocked
+has 'INCONCLUSIVE: control request'; lacks 'PASS: (HTTP|TCP)'
+if grep -qE '^curl .*203\.0\.113\.10|^timeout ' "${STUB_LOG}"; then note "VM was probed although the control request failed"; fi; done_case
+
+run_case "azure-validate blocked: failure takes precedence over inconclusive -> exit 1" 1 azure-validate.sh EXPECTED_ADMIN_CIDR=198.51.100.20/32 NSG_SCENARIO=temp-present CURL_SCENARIO=refused TCP_SCENARIO=closed -- blocked
+has 'FAIL: NSG rules differ'; has 'INCONCLUSIVE: HTTP connection refused'; done_case
+
+run_case "azure-validate blocked: 'timeout' missing from PATH -> exit 2 before any Azure call" 2 azure-validate.sh EXPECTED_ADMIN_CIDR=198.51.100.20/32 PATH="$(path_without timeout)" -- blocked
+has "ERROR: required tool 'timeout' not found"; lacks '^PASS'
+if grep -q '^az ' "${STUB_LOG}"; then note "az was called although a required tool is missing"; fi; done_case
+
+run_case "azure-validate blocked: 'curl' missing from PATH -> exit 2" 2 azure-validate.sh EXPECTED_ADMIN_CIDR=198.51.100.20/32 PATH="$(path_without curl)" -- blocked
+has "ERROR: required tool 'curl' not found"; lacks '^PASS'; done_case
+
+run_case "azure-validate blocked: malformed EXPECTED_ADMIN_CIDR -> exit 2" 2 azure-validate.sh EXPECTED_ADMIN_CIDR=999.1.2.3/32 CURL_SCENARIO=timeout TCP_SCENARIO=closed -- blocked
+has 'ERROR: set EXPECTED_ADMIN_CIDR'; lacks '^PASS'; done_case
+
+run_case "azure-validate: non-numeric CONNECT_TIMEOUT -> exit 2" 2 azure-validate.sh EXPECTED_ADMIN_CIDR=198.51.100.20/32 CONNECT_TIMEOUT=abc -- blocked
+has 'ERROR: CONNECT_TIMEOUT must be a whole number'; lacks '^PASS'; done_case
+
+run_case "azure-validate: unexpected extra argument -> exit 2" 2 azure-validate.sh EXPECTED_ADMIN_CIDR=198.51.100.20/32 -- blocked --force
+has "unexpected argument '--force'"; lacks '^PASS'; done_case
 
 echo
 echo "Script tests: $((cases - case_failures)) passed, ${case_failures} failed (of ${cases})"

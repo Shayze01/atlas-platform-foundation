@@ -1,5 +1,12 @@
 #!/usr/bin/env bash
-# Stub timeout used for the TCP port probes. TCP_SCENARIO: open | closed
+# Stub timeout used for the TCP port probes.
+# TCP_SCENARIO: open | closed (connect timed out, exit 124) | refused | unreachable | badopt
 echo "timeout $*" >>"${STUB_LOG:?}"
-[[ "${TCP_SCENARIO:-open}" == open ]] && exit 0
-exit 124
+case "${TCP_SCENARIO:-open}" in
+  open) exit 0 ;;
+  closed) exit 124 ;;
+  refused) echo "bash: connect: Connection refused" >&2; echo "bash: line 1: /dev/tcp/203.0.113.10/22: Connection refused" >&2; exit 1 ;;
+  unreachable) echo "bash: connect: Network is unreachable" >&2; echo "bash: line 1: /dev/tcp/203.0.113.10/22: Network is unreachable" >&2; exit 1 ;;
+  badopt) echo "timeout: invalid time interval 'abc'" >&2; echo "Try 'timeout --help' for more information." >&2; exit 125 ;;
+esac
+exit 99

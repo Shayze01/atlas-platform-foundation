@@ -9,7 +9,7 @@ reproducible Azure landing spot for a containerised web service, built with
 > and network-restriction checks passed after two validation-script fixes; results,
 > limitations and anything untested are in [`docs/validation-log.md`](docs/validation-log.md)
 > section 4, with sanitised output in [`docs/evidence/2026-11-13-deployment/`](docs/evidence/2026-11-13-deployment/).
-> Latest offline run: 10 passed, 0 failed, 0 skipped.
+> Latest offline run (2026-11-13, after the deployment): `validate.sh` 10 passed, 0 failed, 0 skipped; `terraform test` 15/15; script tests 60/60 - see section 15.
 
 ---
 
@@ -147,6 +147,22 @@ The azurerm provider is pinned with `~> 5.13` (any 5.x from 5.13 upwards) and
 the exact version and checksums are recorded in `.terraform.lock.hcl` for
 Linux, macOS and Windows.
 
+### Required providers
+
+| Kind | Name | Constraint / note |
+| --- | --- | --- |
+| Terraform CLI | `terraform` | `>= 1.7.0, < 2.0.0` (`versions.tf`) |
+| Terraform provider | `hashicorp/azurerm` | `~> 5.13`; v5.13.0 recorded in `.terraform.lock.hcl` |
+| Azure resource provider | `Microsoft.Network` | VNet, subnet, NSG, public IP, NIC |
+| Azure resource provider | `Microsoft.Compute` | VM and managed OS disk |
+| Azure resource provider | `Microsoft.DevTestLab` | Daily auto-shutdown schedule (`azurerm_dev_test_global_vm_shutdown_schedule`); not needed if `auto_shutdown_enabled = false` |
+
+The provider block sets `resource_provider_registrations = "none"`, so Terraform
+never tries to register Azure resource providers itself (that needs
+subscription-wide rights). Check them once with
+`az provider show -n <namespace> --query registrationState -o tsv`; an account
+with subscription rights registers a missing one with `az provider register --namespace <namespace>`.
+
 ## 5. Authenticate with Azure CLI
 
 Terraform's azurerm provider reuses your Azure CLI login. No secrets or service
@@ -255,6 +271,10 @@ admin_source_ip_cidr = "203.0.113.10/32"
 | `project_name` | no | `atlas-foundation` | Used in names and the `Project` tag. |
 | `vnet_address_space` | no | `10.20.0.0/16` | VNet CIDR. |
 | `subnet_address_prefix` | no | `10.20.1.0/24` | Subnet CIDR (inside the VNet). |
+| `test_source_ip_cidrs` | no | `[]` | **Temporary** extra sources for deployment testing, at most 4, each a single IPv4 `/32`. A non-empty list creates one extra NSG rule, `Allow-SSH-HTTP-From-Test-Temporary` (TCP 22 and 80, priority 120). Set it back to `[]` and apply to remove the rule. |
+| `auto_shutdown_enabled` | no | `true` | Creates a daily auto-shutdown schedule that stops and deallocates the VM. A safety net, not a replacement for `terraform destroy`: the public IP and disk keep billing while deallocated. |
+| `auto_shutdown_time` | no | `0200` | Shutdown time, `HHMM` 24-hour format (validated). |
+| `auto_shutdown_timezone` | no | `GMT Standard Time` | Windows time-zone ID. `GMT Standard Time` is UK local time and follows British Summer Time. |
 
 ## 7. Validate, plan and apply
 
@@ -266,7 +286,7 @@ terraform fmt -check -recursive     # formatting check (no changes made)
 terraform validate                  # syntax and type check
 terraform test                      # offline unit tests (mocked provider, creates nothing)
 
-terraform plan -out tfplan          # review: expect 11 resources to add, 0 to change, 0 to destroy
+terraform plan -out tfplan          # fresh default deployment: expect 12 to add, 0 to change, 0 to destroy
 terraform apply tfplan              # creates the resources (this starts billing)
 terraform output                    # shows public IP, SSH command and URLs
 ```
@@ -274,9 +294,16 @@ terraform output                    # shows public IP, SSH command and URLs
 Read the plan before applying. Check in particular that both NSG allow rules
 show your `/32` address and that `disable_password_authentication = true`.
 
-The 11 resources are: resource group, VNet, subnet, NSG, 3 NSG rules,
-NSG-subnet association, public IP, NIC and VM (the VM's OS disk is created as
-part of the VM).
+Expected resource counts:
+
+| Situation | Plan / result |
+| --- | --- |
+| Fresh default deployment (new resource group, `test_source_ip_cidrs = []`, auto-shutdown on) | `12 to add, 0 to change, 0 to destroy`: resource group, VNet, subnet, NSG, 3 NSG rules, NSG-subnet association, public IP, NIC, VM, auto-shutdown schedule (the OS disk is created as part of the VM) |
+| Same, with `auto_shutdown_enabled = false` | `11 to add` |
+| Same, with temporary test sources set | one more: `13 to add` |
+| **Actual deployment, 2026-11-13** - resource group already existed and was imported with `terraform import azurerm_resource_group.this <id>`; two temporary test /32s set | `12 to add, 1 to change, 0 to destroy` (the change added the `Owner` tag to the imported group) |
+| Actual temporary-rule removal (`test_source_ip_cidrs = []`) | `0 to add, 0 to change, 1 to destroy` |
+| Destroy after the temporary rule was removed | `12 destroyed` (same as destroying a fresh default deployment) |
 
 After `apply` finishes, **wait 3-5 minutes** for cloud-init to install Docker
 and start the container before testing HTTP.
@@ -342,7 +369,7 @@ Negative test (optional, recommended for evidence): from a different network
 ## 9. Destroy and verify cleanup
 
 ```bash
-terraform plan -destroy -out destroy.tfplan   # review: expect 11 to destroy, all in rg-atlas-foundation-dev
+terraform plan -destroy -out destroy.tfplan   # review: expect 12 to destroy (13 if the temporary test rule still exists), all in rg-atlas-foundation-dev
 terraform apply destroy.tfplan
 # or simply: terraform destroy
 ```
@@ -423,12 +450,13 @@ Notes:
 | Resource group (`azurerm_resource_group`) | `rg-atlas-foundation-dev` | A dedicated container for every resource, so the project can be inspected, costed and deleted as one unit. |
 | Virtual network (`azurerm_virtual_network`) | `vnet-atlas-foundation-dev` | Private network `10.20.0.0/16` for the workload. No charge for the VNet itself. |
 | Subnet (`azurerm_subnet`) | `snet-workload` | `10.20.1.0/24` segment the VM's NIC is placed in. Private subnet (`default_outbound_access_enabled = false`): no implicit internet egress. |
-| Network security group (`azurerm_network_security_group` + `azurerm_network_security_rule` x3) | `nsg-atlas-foundation-dev` | Stateful firewall. Rules are separate resources so each is easy to read and test. |
+| Network security group (`azurerm_network_security_group` + `azurerm_network_security_rule` x3, plus x1 only while `test_source_ip_cidrs` is set) | `nsg-atlas-foundation-dev` | Stateful firewall. Rules are separate resources so each is easy to read and test. |
 | NSG association (`azurerm_subnet_network_security_group_association`) | - | Applies the NSG to the whole subnet, so any future VM in the subnet is protected too. Created before the VM. |
 | Public IP (`azurerm_public_ip`) | `pip-atlas-foundation-dev` | Standard SKU, static. Standard IPs are "secure by default": inbound is blocked unless an NSG allows it. Also the VM's **explicit outbound** path (see 10.3). Static keeps the same address across VM restarts. |
 | Network interface (`azurerm_network_interface`) | `nic-atlas-foundation-dev` | Connects the VM to the subnet (dynamic private IP). Its primary IP configuration has `public_ip_address_id` set to the Standard public IP. |
 | Linux VM (`azurerm_linux_virtual_machine`) | `vm-atlas-foundation-dev` | Ubuntu Server 24.04 LTS (`Canonical/ubuntu-24_04-lts/server`). SSH key only, password auth disabled, cloud-init passed as `custom_data`, managed boot diagnostics enabled for the serial log/console. |
 | OS disk (part of the VM) | `osdisk-atlas-foundation-dev` | `Standard_LRS` (HDD) managed disk - the cheapest option; fine for a lab. |
+| Auto-shutdown (`azurerm_dev_test_global_vm_shutdown_schedule`, when `auto_shutdown_enabled`) | `shutdown-computevm-vm-atlas-foundation-dev` | Stops and deallocates the VM daily at 02:00 UK time if it was forgotten. No notifications. |
 
 Inside the VM, cloud-init:
 
@@ -589,12 +617,14 @@ Work from the inside out:
 
 ## 12. Evidence screenshots
 
-Save redacted screenshots in `docs/evidence/` with these names:
+The 2026-11-13 deployment was recorded as sanitised text logs in
+[`docs/evidence/2026-11-13-deployment/`](docs/evidence/2026-11-13-deployment/), not screenshots.
+For your own run, save redacted screenshots in `docs/evidence/` with these names:
 
 | File | What it should show |
 | --- | --- |
 | `01-local-validate.png` | `./scripts/validate.sh` summary ending `Passed: 10  Failed: 0  Skipped: 0` |
-| `02-terraform-plan.png` | Plan summary `Plan: 11 to add, 0 to change, 0 to destroy.` |
+| `02-terraform-plan.png` | Plan summary (fresh default: `Plan: 12 to add, 0 to change, 0 to destroy.`; see section 7 for other cases) |
 | `03-terraform-apply-outputs.png` | `Apply complete!` and `terraform output` |
 | `04-portal-resource-group.png` | Resource group with its resources and tags |
 | `05-nsg-inbound-rules.png` | NSG inbound rules showing the `/32` source |
@@ -603,7 +633,7 @@ Save redacted screenshots in `docs/evidence/` with these names:
 | `08-ssh-cloud-init-docker.png` | SSH session with `cloud-init status --long`, `docker ps` (healthy) and `sudo sshd -T` showing `passwordauthentication no` |
 | `09-password-auth-refused.png` | `./scripts/connectivity-check.sh` ending `RESULT: PASS`, including `Permission denied (publickey)` for the non-key attempt |
 | `10-blocked-from-other-network.png` | Request timing out from a different network |
-| `11-terraform-destroy.png` | `Destroy complete! Resources: 11 destroyed.` |
+| `11-terraform-destroy.png` | `Destroy complete! Resources: 12 destroyed.` |
 | `12-cleanup-verified.png` | `./scripts/verify-cleanup.sh` ending `RESULT: PASS` (exit 0, no `INCONCLUSIVE` lines) |
 
 **Hide sensitive information before committing screenshots:**
@@ -718,43 +748,56 @@ nothing. One command runs all checks and ends with a PASS / FAIL / SKIP summary:
 | 1 | `terraform fmt -check -recursive` | Formatting of all `.tf` / `.tftest.hcl` files. |
 | 2 | `terraform init -backend=false` | Provider/module installation from the lock file, no backend. |
 | 3 | `terraform validate` | Syntax, types and provider schema. |
-| 4 | `terraform test` | 9 test runs with a **mocked azurerm provider** (listed below). |
+| 4 | `terraform test` | 15 test runs with a **mocked azurerm provider** (listed below). |
 | 5 | Render cloud-init | Renders the template exactly as Terraform would (`build/cloud-init.rendered.yaml`). |
 | 6 | Embedded app files unchanged | The 4 app files inside cloud-init match `./app` byte-for-byte. |
 | 7 | `cloud-init schema` | The rendered cloud-init is valid (SKIP if cloud-init is not installed). |
-| 8 | Script behaviour tests | 29 stub-based cases for `verify-cleanup.sh` and `connectivity-check.sh` (listed below). |
+| 8 | Script behaviour tests | 60 stub-based cases for `verify-cleanup.sh`, `connectivity-check.sh` and `azure-validate.sh` (listed below). |
 | 9 | `shellcheck` | `app/run-container.sh`, `scripts/*.sh`, `tests/scripts/` (SKIP if shellcheck is not installed). |
 | 10 | Local web service test | 9 Docker checks: `/health` 200 + JSON body, `/` 200 + title, unknown path 404, nginx version hidden, non-root user, read-only root filesystem, `HEALTHCHECK` healthy (SKIP if Docker is unavailable). |
 
-The 9 `terraform test` runs:
+The 15 `terraform test` runs:
 
 | File | Run | Checks |
 | --- | --- | --- |
 | `tests/networking.tftest.hcl` | `nsg_allows_only_admin_ip_on_ssh_and_http` | SSH/HTTP allow rules use only the `/32`, TCP 22/80, no internet-wide source, explicit Internet deny, subnet prefix, default outbound access disabled, tags. |
 | `tests/compute.tftest.hcl` | `vm_uses_ssh_keys_only` | Password auth disabled, no password, SSH key user, Ubuntu 24.04 image, base64 `custom_data`, Standard static public IP, tags. |
 | `tests/compute.tftest.hcl` | `public_ip_attached_to_nic_for_explicit_outbound` | Mocked apply: NIC `public_ip_address_id` equals the public IP ID; NIC uses the workload subnet. |
+| `tests/compute.tftest.hcl` | `daily_auto_shutdown_at_0200_uk_time` | One schedule by default: enabled, `0200`, `GMT Standard Time`. |
+| `tests/compute.tftest.hcl` | `auto_shutdown_can_be_disabled` | No schedule when `auto_shutdown_enabled = false`. |
 | `tests/root.tftest.hcl` | `plan_with_valid_inputs` | Resource group name/location, all four tags, rendered cloud-init content. |
 | `tests/root.tftest.hcl` | `rejects_internet_wide_source` | `0.0.0.0/0` is rejected. |
 | `tests/root.tftest.hcl` | `rejects_ip_range_wider_than_32` | `203.0.113.0/24` is rejected. |
 | `tests/root.tftest.hcl` | `rejects_ip_without_prefix` | A bare IP without `/32` is rejected. |
 | `tests/root.tftest.hcl` | `rejects_private_key` | A pasted private key is rejected. |
 | `tests/root.tftest.hcl` | `rejects_reserved_admin_username` | `admin` is rejected as a username. |
+| `tests/root.tftest.hcl` | `no_temporary_test_rule_by_default` | No temporary rule when `test_source_ip_cidrs` is empty. |
+| `tests/root.tftest.hcl` | `temporary_test_rule_only_allows_listed_32s` | Exactly one temporary rule, allowing only the listed `/32`s. |
+| `tests/root.tftest.hcl` | `rejects_test_source_wider_than_32` | A `/24` test source is rejected. |
+| `tests/root.tftest.hcl` | `rejects_invalid_auto_shutdown_time` | `2:00` is rejected (must be `HHMM`). |
 
 The script behaviour tests (`tests/scripts/run-script-tests.sh`) put stub
 `az`, `terraform`, `curl`, `ssh` and `timeout` commands from
 `tests/scripts/stubs/` first on `PATH`, so nothing contacts Azure or the
-network. They check exit codes and output for:
+network. Fixture addresses are documentation-only ranges (RFC 5737:
+`192.0.2.0/24`, `198.51.100.0/24`, `203.0.113.0/24`). They check exit codes and output for:
 
 | Script | Cases |
 | --- | --- |
 | `verify-cleanup.sh` (13) | All absent (exit 0); custom suffix stays in its own resource group; remaining group/public IP/state (exit 1); not logged in, expired token, `AuthorizationFailed`, network failure, unexpected error, unexpected `az group exists` output, one lookup failing among successes, failed `terraform state list`, no state file (all exit 2, `INCONCLUSIVE`); remaining + inconclusive (exit 1). Every case also asserts each `az` call is scoped to the project resource group. |
 | `connectivity-check.sh` (16) | All healthy (exit 0); `/health` HTTP 500, `/health` wrong body, landing page without title, HTTP timeout, connection refused, SSH timeout, auth-probe timeout, key rejected, password auth enabled, `sshd -T` unreadable, cloud-init error, container unhealthy, TCP ports closed (all exit 1); missing Terraform outputs, missing SSH key (exit 2). The SSH-timeout case asserts that no SSH, cloud-init, container or password check is reported as PASS. |
+| `azure-validate.sh` (31) | **public** (4): healthy (exit 0); HTTP timeout, SSH timeout (never proof), password offered (exit 1). **in-vm** (7): healthy with key installed and outbound via the public IP (exit 0); Run Command error never passes, outbound IP mismatch, password auth enabled, cloud-init running, container unhealthy, admin key missing (exit 1). **blocked** (20): rules final + connect timeouts, also with curl 8 timeout wording (exit 0); temporary rule present, HTTP still reachable, TCP 22 still connects, HTTP timeout *after* connecting, failure + inconclusive together (exit 1); NSG read error, HTTP refused, HTTP network unreachable, curl invalid option, TCP 22 refused, TCP 22 unreachable, `timeout` tool error, failed Internet control request (VM then not probed), `timeout` or `curl` missing from `PATH` (no Azure call made), malformed `EXPECTED_ADMIN_CIDR`, non-numeric `CONNECT_TIMEOUT`, unexpected extra argument (all exit 2, never PASS). |
 
-**Latest recorded result** (full output and tool versions in
-[`docs/validation-log.md`](docs/validation-log.md)): **10 passed, 0 failed,
-0 skipped**; `terraform test` 9/9 runs passed; script behaviour tests 29/29
-cases passed; local web test 9/9 checks passed. No Azure deployment checks
-have been run.
+**Latest offline result (2026-11-13, after the Azure deployment and the
+validation-script fixes):** `validate.sh` **10 passed, 0 failed, 0 skipped**;
+`terraform test` 15/15 runs passed; script behaviour tests 60/60 cases passed
+(13 cleanup, 16 connectivity, 31 azure-validate); local web test 9/9 checks
+passed. Raw output: [`docs/evidence/offline-validate-2026-11-13.log`](docs/evidence/offline-validate-2026-11-13.log).
+
+*Historical:* the first offline run (2026-11-12, before deployment) passed with
+9 `terraform test` runs and 29 script cases; it is kept in
+[`docs/validation-log.md`](docs/validation-log.md) sections 1-3. Azure deployment
+checks were run on 2026-11-13 and are recorded separately in section 4 of that file.
 
 If Docker Hub rate-limits your machine (HTTP 429), use a mirror for the local
 test: `BASE_IMAGE=mirror.gcr.io/nginxinc/nginx-unprivileged:1.30-alpine ./scripts/validate.sh`.

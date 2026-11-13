@@ -3,7 +3,11 @@
 This file records checks that were **actually executed** and their results.
 Offline checks do not contact Azure and do not prove that a deployment works.
 
-## 1. Offline checks - `./scripts/validate.sh` (executed 2026-11-12)
+## 1. HISTORICAL - offline checks before deployment (executed 2026-11-12)
+
+> Historical record, kept unchanged. The code has changed since (temporary test
+> rule, auto-shutdown, validation-script fixes). The current offline result is in
+> [section 5](#5-offline-checks-after-deployment-executed-2026-11-13).
 
 Environment: Ubuntu 22.04.5 LTS (x86_64), Terraform v1.9.8, azurerm provider
 5.13.0 (from `.terraform.lock.hcl`), Docker Engine 29.9.2, cloud-init 26.1,
@@ -43,7 +47,7 @@ Script behaviour tests use stub `az`, `terraform`, `curl`, `ssh` and `timeout`
 commands (`tests/scripts/stubs/`) placed first on `PATH`; no Azure or network
 calls are made. Each case and its result appears in the raw output below.
 
-## 2. Additional manual checks (executed 2026-11-12, not part of `validate.sh`)
+## 2. HISTORICAL - additional manual checks (executed 2026-11-12, not part of `validate.sh`)
 
 | Check | Expected | Result |
 | --- | --- | --- |
@@ -55,7 +59,7 @@ calls are made. Each case and its result appears in the raw output below.
 After the Terraform mutation checks, `terraform test` was re-run on the
 restored code: 9 passed, 0 failed.
 
-## 3. Raw output of `./scripts/validate.sh`
+## 3. HISTORICAL - raw output of `./scripts/validate.sh` (2026-11-12)
 
 ```text
 
@@ -232,6 +236,14 @@ Times are UTC (= UK time, GMT, on this date).
   `sshd -T`. Rerun: 10/10 PASS. Script tests: 44/44 PASS, ShellCheck clean.
 - **First blocked-mode run stopped (exit 2)** because `EXPECTED_ADMIN_CIDR` was not
   set; rerun with it set: 3/3 PASS.
+- **Blocked-mode probe classification tightened after the deployment.** The live
+  run on 2026-11-13 (`08-blocked-rerun.log`) used the earlier script, which
+  counted curl exit 7 or 28 as blocked and **any** failed TCP connect as blocked.
+  Its recorded result was curl exit 28 for HTTP; the TCP line did not record why
+  the connect failed. The script now passes only a connect-phase timeout, treats
+  refused/unreachable connections, probe-tool errors, missing tools, invalid
+  options and a failed Internet control request as INCONCLUSIVE (exit 2), and was
+  re-tested offline only (section 5). The live logs are kept as recorded.
 - The in-VM key-fingerprint check is skipped unless `ADMIN_PUBKEY_FILE` is set; the
   rerun set it.
 
@@ -241,3 +253,33 @@ Times are UTC (= UK time, GMT, on this date).
 - "Blocked" was proven only for the former test sources, not for every other network.
 - The 02:00 auto-shutdown was confirmed as configured, not observed running.
 - Key login is recorded as passed only if the administrator ran it and reported output.
+
+## 5. Offline checks after deployment (executed 2026-11-13)
+
+New run, separate from the historical section 1 and the live Azure results in
+section 4. No Azure access was used. Raw output:
+[`evidence/offline-validate-2026-11-13.log`](evidence/offline-validate-2026-11-13.log).
+
+Environment: Ubuntu 22.04.5 LTS (x86_64), Terraform v1.9.8, azurerm provider
+5.13.0 (lock file), Docker Engine 29.9.2, cloud-init 26.1, ShellCheck 0.11.0.
+
+### Summary: 10 passed, 0 failed, 0 skipped (`./scripts/validate.sh`, exit 0)
+
+| # | Check | Result | Detail |
+| --- | --- | --- | --- |
+| 1 | `terraform fmt -check -recursive` | PASS | No differences. |
+| 2 | `terraform init -backend=false` | PASS | azurerm v5.13.0 from the lock file. |
+| 3 | `terraform validate` | PASS | "The configuration is valid." |
+| 4 | `terraform test` (mocked provider) | PASS | 15 passed, 0 failed. |
+| 5 | Render cloud-init | PASS | |
+| 6 | Embedded app files unchanged | PASS | 4/4 files match `./app`. |
+| 7 | `cloud-init schema` | PASS | "Valid schema". |
+| 8 | Script behaviour tests (stubs, no network) | PASS | 60 passed, 0 failed (13 `verify-cleanup.sh`, 16 `connectivity-check.sh`, 31 `azure-validate.sh`). |
+| 9 | `shellcheck` | PASS | No findings. |
+| 10 | Local web service test (Docker) | PASS | 9/9 checks passed. |
+
+Changes covered by this run: `azure-validate.sh` blocked-mode probe
+classification and argument/tool checks (16 new script cases and one changed
+case: NSG read error is now exit 2 INCONCLUSIVE instead of exit 1), and test
+fixtures using only RFC 5737 documentation addresses.
+
