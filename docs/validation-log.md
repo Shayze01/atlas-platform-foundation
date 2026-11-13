@@ -198,7 +198,8 @@ Deployed from the saved, user-approved plan `deploy.tfplan` by a certificate-bas
 service principal holding **Contributor on `rg-atlas-foundation-dev` only**.
 Sanitised raw output is in [`evidence/2026-11-13-deployment/`](evidence/2026-11-13-deployment/)
 (subscription ID and all IP addresses redacted; `<test-ip-a>`/`<test-ip-b>` are the two
-temporary test sources, `<admin-ip>` is the administrator's /32).
+temporary test sources, `<admin-ip>` is the administrator's /32; before publication the
+administrator's SSH public key, its fingerprint and the `Owner` tag value were also redacted).
 Times are UTC (= UK time, GMT, on this date).
 
 ### 4.1 Results
