@@ -1,0 +1,14 @@
+IN_VM_START_UTC=2026-11-13T23:12:27Z
+== in-vm checks for vm-atlas-foundation-dev (<vm-public-ip>) in rg-atlas-foundation-dev
+PASS: in-VM: cloud-init finished (CLOUD_INIT=status: done)
+PASS: in-VM: container atlas-web healthy (CONTAINER_HEALTH=healthy)
+PASS: in-VM: local /health returns HTTP 200 (LOCAL_HEALTH_CODE=200)
+PASS: in-VM: local /health body contains "status":"ok"
+FAIL: in-VM: effective sshd: password authentication disabled - expected SSHD_passwordauthentication=no, got '<missing>'
+FAIL: in-VM: effective sshd: keyboard-interactive disabled - expected SSHD_kbdinteractiveauthentication=no, got '<missing>'
+FAIL: in-VM: effective sshd: root login disabled - expected SSHD_permitrootlogin=no, got '<missing>'
+FAIL: in-VM: effective sshd: public-key authentication enabled - expected SSHD_pubkeyauthentication=yes, got '<missing>'
+PASS: in-VM: outbound traffic leaves via the NIC's Standard public IP (OUTBOUND_IP=<vm-public-ip>)
+
+RESULT (in-vm): 5 passed, 4 failed
+rc=1 END_UTC=2026-11-13T23:13:03Z

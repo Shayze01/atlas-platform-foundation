@@ -1,0 +1,4 @@
+BLOCKED_START_UTC=2026-11-13T23:15:29Z source_ips_seen=<test-ip-a>,<test-ip-b>
+== blocked checks for vm-atlas-foundation-dev (<vm-public-ip>) in rg-atlas-foundation-dev
+ERROR: set EXPECTED_ADMIN_CIDR to the admin /32
+rc=2 END_UTC=2026-11-13T23:15:32Z

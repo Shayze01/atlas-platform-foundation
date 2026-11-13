@@ -1,0 +1,25 @@
+VERIFY_START_UTC=2026-11-13T23:22:40Z
+Project resource group: rg-atlas-foundation-dev
+
+==> Terraform state (run from this repository)
+PASS: Terraform state tracks no resources
+
+==> Azure CLI session
+Subscription: Azure subscription 1
+
+==> Resource group
+PASS: rg-atlas-foundation-dev does not exist
+
+==> Exact project resource names
+PASS: Microsoft.Compute/virtualMachines/vm-atlas-foundation-dev not found
+PASS: Microsoft.Compute/disks/osdisk-atlas-foundation-dev not found
+PASS: Microsoft.Network/networkInterfaces/nic-atlas-foundation-dev not found
+PASS: Microsoft.Network/publicIPAddresses/pip-atlas-foundation-dev not found
+PASS: Microsoft.Network/networkSecurityGroups/nsg-atlas-foundation-dev not found
+PASS: Microsoft.Network/virtualNetworks/vnet-atlas-foundation-dev not found
+
+Remaining: 0  Inconclusive: 0
+RESULT: PASS - no resources from rg-atlas-foundation-dev remain. Charges for them stop from deletion
+onward; usage already incurred will still appear in Cost Management (data can lag
+24-48 hours or more). Other resources in the subscription were not queried or changed.
+rc=0 VERIFY_END_UTC=2026-11-13T23:22:59Z

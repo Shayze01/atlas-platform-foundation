@@ -1,0 +1,45 @@
+APPLY_START_UTC=2026-11-13T23:10:32Z
+azurerm_resource_group.this: Modifying... [id=/subscriptions/<subscription-id>/resourceGroups/rg-atlas-foundation-dev]
+azurerm_resource_group.this: Modifications complete after 1s [id=/subscriptions/<subscription-id>/resourceGroups/rg-atlas-foundation-dev]
+module.networking.azurerm_network_security_group.workload: Creating...
+module.networking.azurerm_virtual_network.this: Creating...
+module.networking.azurerm_network_security_group.workload: Creation complete after 3s [id=/subscriptions/<subscription-id>/resourceGroups/rg-atlas-foundation-dev/providers/Microsoft.Network/networkSecurityGroups/nsg-atlas-foundation-dev]
+module.networking.azurerm_network_security_rule.allow_ssh_from_admin: Creating...
+module.networking.azurerm_network_security_rule.deny_internet_inbound: Creating...
+module.networking.azurerm_network_security_rule.allow_http_from_admin: Creating...
+module.networking.azurerm_network_security_rule.allow_test_sources[0]: Creating...
+module.networking.azurerm_network_security_rule.allow_ssh_from_admin: Creation complete after 3s [id=/subscriptions/<subscription-id>/resourceGroups/rg-atlas-foundation-dev/providers/Microsoft.Network/networkSecurityGroups/nsg-atlas-foundation-dev/securityRules/Allow-SSH-From-Admin]
+module.networking.azurerm_network_security_rule.allow_test_sources[0]: Creation complete after 3s [id=/subscriptions/<subscription-id>/resourceGroups/rg-atlas-foundation-dev/providers/Microsoft.Network/networkSecurityGroups/nsg-atlas-foundation-dev/securityRules/Allow-SSH-HTTP-From-Test-Temporary]
+module.networking.azurerm_virtual_network.this: Creation complete after 6s [id=/subscriptions/<subscription-id>/resourceGroups/rg-atlas-foundation-dev/providers/Microsoft.Network/virtualNetworks/vnet-atlas-foundation-dev]
+module.networking.azurerm_subnet.workload: Creating...
+module.networking.azurerm_network_security_rule.deny_internet_inbound: Creation complete after 3s [id=/subscriptions/<subscription-id>/resourceGroups/rg-atlas-foundation-dev/providers/Microsoft.Network/networkSecurityGroups/nsg-atlas-foundation-dev/securityRules/Deny-Internet-Inbound]
+module.networking.azurerm_subnet.workload: Creation complete after 6s [id=/subscriptions/<subscription-id>/resourceGroups/rg-atlas-foundation-dev/providers/Microsoft.Network/virtualNetworks/vnet-atlas-foundation-dev/subnets/snet-workload]
+module.networking.azurerm_network_security_rule.allow_http_from_admin: Still creating... [10s elapsed]
+module.networking.azurerm_network_security_rule.allow_http_from_admin: Creation complete after 16s [id=/subscriptions/<subscription-id>/resourceGroups/rg-atlas-foundation-dev/providers/Microsoft.Network/networkSecurityGroups/nsg-atlas-foundation-dev/securityRules/Allow-HTTP-From-Admin]
+module.networking.azurerm_subnet_network_security_group_association.workload: Creating...
+module.networking.azurerm_subnet_network_security_group_association.workload: Creation complete after 6s [id=/subscriptions/<subscription-id>/resourceGroups/rg-atlas-foundation-dev/providers/Microsoft.Network/virtualNetworks/vnet-atlas-foundation-dev/subnets/snet-workload]
+module.compute.azurerm_public_ip.vm: Creating...
+module.compute.azurerm_public_ip.vm: Creation complete after 3s [id=/subscriptions/<subscription-id>/resourceGroups/rg-atlas-foundation-dev/providers/Microsoft.Network/publicIPAddresses/pip-atlas-foundation-dev]
+module.compute.azurerm_network_interface.vm: Creating...
+module.compute.azurerm_network_interface.vm: Creation complete after 3s [id=/subscriptions/<subscription-id>/resourceGroups/rg-atlas-foundation-dev/providers/Microsoft.Network/networkInterfaces/nic-atlas-foundation-dev]
+module.compute.azurerm_linux_virtual_machine.this: Creating...
+module.compute.azurerm_linux_virtual_machine.this: Still creating... [10s elapsed]
+module.compute.azurerm_linux_virtual_machine.this: Creation complete after 14s [id=/subscriptions/<subscription-id>/resourceGroups/rg-atlas-foundation-dev/providers/Microsoft.Compute/virtualMachines/vm-atlas-foundation-dev]
+module.compute.azurerm_dev_test_global_vm_shutdown_schedule.this[0]: Creating...
+module.compute.azurerm_dev_test_global_vm_shutdown_schedule.this[0]: Creation complete after 5s [id=/subscriptions/<subscription-id>/resourceGroups/rg-atlas-foundation-dev/providers/Microsoft.DevTestLab/schedules/shutdown-computevm-vm-atlas-foundation-dev]
+
+Apply complete! Resources: 12 added, 1 changed, 0 destroyed.
+
+Outputs:
+
+auto_shutdown_schedule = {
+  "time" = "0200"
+  "timezone" = "GMT Standard Time"
+}
+health_url = "http://<vm-public-ip>/health"
+public_ip_address = "<vm-public-ip>"
+resource_group_name = "rg-atlas-foundation-dev"
+ssh_command = "ssh -i ~/.ssh/atlas_admin atlasadmin@<vm-public-ip>"
+vm_name = "vm-atlas-foundation-dev"
+web_url = "http://<vm-public-ip>/"
+rc=0 APPLY_END_UTC=2026-11-13T23:11:24Z

@@ -1,0 +1,11 @@
+BLOCKED_RERUN_START_UTC=2026-11-13T23:15:34Z (EXPECTED_ADMIN_CIDR set) source_ips_seen=<test-ip-a>,<test-ip-b>
+== blocked checks for vm-atlas-foundation-dev (<vm-public-ip>) in rg-atlas-foundation-dev
+    Allow-SSH-From-Admin	Allow	<admin-ip>/32		22
+    Allow-HTTP-From-Admin	Allow	<admin-ip>/32		80
+    Deny-Internet-Inbound	Deny	Internet		*
+PASS: NSG has exactly the intended rules (admin <admin-ip>/32 on 22/80, Internet deny) and no temporary rule
+PASS: HTTP from this machine no longer connects (curl exit 28)
+PASS: TCP 22 from this machine no longer connects
+
+RESULT (blocked): 3 passed, 0 failed
+rc=0 END_UTC=2026-11-13T23:16:00Z

@@ -27,7 +27,7 @@ case "${remote}" in
     echo "status: done" ;;
   *"docker inspect"*)
     if [[ "${scenario}" == unhealthy ]]; then echo "unhealthy"; else echo "healthy"; fi ;;
-  "sudo -n sshd -T")
+  "sudo -n install -d -m 0755 /run/sshd && sudo -n sshd -T")
     [[ "${scenario}" == sshd-unreadable ]] && { echo "sudo: a password is required" >&2; exit 1; }
     pw=no; [[ "${scenario}" == password-enabled ]] && pw=yes
     printf 'port 22\npermitrootlogin no\npubkeyauthentication yes\npasswordauthentication %s\nkbdinteractiveauthentication no\n' "${pw}" ;;

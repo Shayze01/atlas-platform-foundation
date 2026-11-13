@@ -1,0 +1,38 @@
+CAPTURED_UTC=2026-11-13T23:14:31Z
+== Resources in rg-atlas-foundation-dev
+Name                                        Location
+------------------------------------------  ----------
+nsg-atlas-foundation-dev                    eastus
+vnet-atlas-foundation-dev                   eastus
+pip-atlas-foundation-dev                    eastus
+nic-atlas-foundation-dev                    eastus
+vm-atlas-foundation-dev                     eastus
+osdisk-atlas-foundation-dev                 eastus
+shutdown-computevm-vm-atlas-foundation-dev  eastus
+== VM
+Size               Power       Image             Sku     OsDiskType    PwdAuthDisabled    PublicIp
+-----------------  ----------  ----------------  ------  ------------  -----------------  ------------
+Standard_B2ats_v2  VM running  ubuntu-24_04-lts  server  Standard_LRS  True               <vm-public-ip>
+== NIC ip config (public IP attached)
+Name              PrivateIp    PublicIpId
+----------------  -----------  -----------------------------------------------------------------------------------------------------------------------------------------------------------------
+ipconfig-primary  10.20.1.4    /subscriptions/<subscription-id>/resourceGroups/rg-atlas-foundation-dev/providers/Microsoft.Network/publicIPAddresses/pip-atlas-foundation-dev
+== Public IP
+Ip            Sku       Alloc
+------------  --------  -------
+<vm-public-ip>  Standard  Static
+== Subnet
+DefaultOutboundAccess    Nsg
+-----------------------  ---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+False                    /subscriptions/<subscription-id>/resourceGroups/rg-atlas-foundation-dev/providers/Microsoft.Network/networkSecurityGroups/nsg-atlas-foundation-dev
+== NSG rules (with temporary test rule)
+Prio    Name                                Access    Src                               Ports
+------  ----------------------------------  --------  --------------------------------  -------
+100     Allow-SSH-From-Admin                Allow     <admin-ip>/32,                22,
+110     Allow-HTTP-From-Admin               Allow     <admin-ip>/32,                80,
+120     Allow-SSH-HTTP-From-Test-Temporary  Allow     ,<test-ip-b>/32,<test-ip-a>/32  ,22,80
+4000    Deny-Internet-Inbound               Deny      Internet,                         *,
+== Auto-shutdown schedule
+Status    Time    Tz                 Task
+--------  ------  -----------------  ---------------------
+Enabled   0200    GMT Standard Time  ComputeVmShutdownTask

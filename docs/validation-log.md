@@ -188,19 +188,56 @@ Passed: 10  Failed: 0  Skipped: 0
 Azure deployment checks are NOT part of this script (see README sections 7-9).
 ```
 
-## 4. Azure deployment checks - NOT executed
+## 4. Azure deployment checks (executed 2026-11-13, East US)
 
-The following require an Azure subscription and have **not** been run. Record
-results here (and screenshots in `docs/evidence/`) after you deploy:
+Deployed from the saved, user-approved plan `deploy.tfplan` by a certificate-based
+service principal holding **Contributor on `rg-atlas-foundation-dev` only**.
+Sanitised raw output is in [`evidence/2026-11-13-deployment/`](evidence/2026-11-13-deployment/)
+(subscription ID and all IP addresses redacted; `<test-ip-a>`/`<test-ip-b>` are the two
+temporary test sources, `<admin-ip>` is the administrator's /32).
+Times are UTC (= UK time, GMT, on this date).
 
-| Check | Command / location | Result |
-| --- | --- | --- |
-| `terraform plan` shows 11 to add, all in `rg-atlas-foundation-dev` | README section 7 | not run |
-| `terraform apply` succeeds | README section 7 | not run |
-| `/health` returns 200 from admin IP | README section 8 | not run |
-| Landing page shows "Atlas Platform Foundation" | README section 8 | not run |
-| `scripts/connectivity-check.sh` exits 0 (14/14 PASS: HTTP status/body, key-authenticated SSH, `cloud-init status: done`, container healthy, effective `sshd -T` settings, only `publickey` offered) | README section 8 | not run |
-| HTTP/SSH blocked from another network | README section 8 | not run |
-| Outbound uses the VM's public IP (`curl -4 ifconfig.me` on the VM) | README section 10.3 | not run |
-| `terraform destroy` + `scripts/verify-cleanup.sh` exits 0 (no `INCONCLUSIVE`) | README section 9 | not run |
-| No new cost for `rg-atlas-foundation-dev` after deletion (Cost analysis, 24-48 h later) | README section 9 | not run |
+### 4.1 Results
+
+| # | Check | How / where it ran | Result | Evidence |
+| --- | --- | --- | --- | --- |
+| 1 | `terraform plan` | `deploy.tfplan`: 12 to add, 1 to change (RG `Owner` tag), 0 to destroy | PASS | plan reviewed before apply |
+| 2 | `terraform apply deploy.tfplan` (23:10:32-23:11:24) | Terraform, VM size `Standard_B2ats_v2` | PASS - 12 added, 1 changed, 0 destroyed | `01-apply.log` |
+| 3 | Landing page: HTTP 200 + "Atlas Platform Foundation" | **Public**, from a temporary test source | PASS | `02-public.log` |
+| 4 | `/health`: HTTP 200 + `"status":"ok"` | **Public**, from a temporary test source | PASS | `02-public.log` |
+| 5 | No-key SSH refused with `Permission denied (publickey)` | **Public** | PASS | `02-public.log` |
+| 6 | `cloud-init status` = `status: done` | **In-VM** (Azure Run Command) | PASS | `04-in-vm-rerun.log` |
+| 7 | Container `atlas-web` health = `healthy`; local `/health` 200 + ok | **In-VM** (Run Command) | PASS | `04-in-vm-rerun.log` |
+| 8 | Effective `sshd -T`: passwordauthentication no, kbdinteractiveauthentication no, permitrootlogin no, pubkeyauthentication yes | **In-VM** (Run Command) | PASS on rerun (first run FAIL, see 4.2) | `03-in-vm.log`, `04-in-vm-rerun.log` |
+| 9 | Admin key fingerprint `SHA256:<admin-key-fingerprint-redacted>` in `authorized_keys` | **In-VM** (Run Command) | PASS | `04-in-vm-rerun.log` |
+| 10 | Outbound IP seen from inside the VM = the NIC's Standard public IP | **In-VM** (Run Command) | PASS | `04-in-vm-rerun.log` |
+| 11 | NIC has the Standard static public IP attached; subnet `defaultOutboundAccess = False` | Azure CLI | PASS | `05-resources.log` |
+| 12 | Auto-shutdown schedule: Enabled, 0200, `GMT Standard Time`, `ComputeVmShutdownTask` | Azure CLI | PASS (configuration only; it was **not** observed firing) | `05-resources.log` |
+| 13 | Temporary test rule removed by `terraform apply` (0 added, 0 changed, 1 destroyed) | Terraform | PASS | `06-remove-test-rule.log` |
+| 14 | NSG has exactly admin SSH/HTTP from `<admin-ip>/32` + Internet deny, no temporary rule | Azure CLI | PASS on rerun (first run stopped, see 4.2) | `07-blocked.log`, `08-blocked-rerun.log` |
+| 15 | HTTP and TCP/22 from the former test sources no longer connect | **Public** | PASS | `08-blocked-rerun.log` |
+| 15a | VM ED25519 host key = `SHA256:Kk8+pxM3zOLQELEZtzMmE57OOwDZPFjJ2P0NyeHbzaU` (matches fingerprint seen on admin laptop) | **In-VM** (Run Command) | PASS | `09-hostkey.log` |
+| 16 | Key-authenticated SSH login from the administrator's laptop | administrator's laptop (private key never left it) | PASS - key session succeeded; cloud-init done, container healthy, effective sshd settings correct; `/health` 200 from admin IP | `09b-admin-laptop-keylogin.log` |
+| 17 | `terraform destroy` | Terraform | PASS - 12 destroyed (23:20:26-23:22:36 UTC), including the resource group | `10-destroy.log` |
+| 18 | `scripts/verify-cleanup.sh` exit 0 | Azure CLI + Terraform state | PASS - exit 0: state empty, `ResourceGroupNotFound` for the RG, all 6 exact names not found, 0 inconclusive (23:22:59 UTC) | `11-verify-cleanup.log` |
+| 19 | No new cost for `rg-atlas-foundation-dev` after deletion | Cost analysis, 24-48 h later | not run (billing data lags) | - |
+
+### 4.2 Problems found and fixed during deployment
+
+- **`sshd -T` failed in-VM** with `Missing privilege separation directory: /run/sshd`.
+  Ubuntu 24.04 starts SSH through `ssh.socket`, so `/run/sshd` does not exist until
+  sshd first runs, and `sshd -T` refuses to run without it. The four effective-config
+  checks therefore reported FAIL (never PASS). Fix: `scripts/azure-validate.sh` and
+  `scripts/connectivity-check.sh` now run `install -d -m 0755 /run/sshd` before
+  `sshd -T`. Rerun: 10/10 PASS. Script tests: 44/44 PASS, ShellCheck clean.
+- **First blocked-mode run stopped (exit 2)** because `EXPECTED_ADMIN_CIDR` was not
+  set; rerun with it set: 3/3 PASS.
+- The in-VM key-fingerprint check is skipped unless `ADMIN_PUBKEY_FILE` is set; the
+  rerun set it.
+
+### 4.3 Limitations
+
+- Public checks came from two temporary /32 test sources, not from the admin IP.
+- "Blocked" was proven only for the former test sources, not for every other network.
+- The 02:00 auto-shutdown was confirmed as configured, not observed running.
+- Key login is recorded as passed only if the administrator ran it and reported output.

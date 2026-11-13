@@ -4,11 +4,12 @@ Milestone 1 of the **Atlas** cloud engineering portfolio: a small, secure, fully
 reproducible Azure landing spot for a containerised web service, built with
 **Terraform**, **Azure networking**, **Ubuntu Linux**, **cloud-init** and **Docker**.
 
-> **Status:** code and offline tests are complete (latest offline run: 10 passed,
-> 0 failed, 0 skipped - see [`docs/validation-log.md`](docs/validation-log.md)).
-> **No Azure deployment has been performed from this repository yet.**
-> Deployment evidence must be captured from your own subscription (see
-> [Evidence](#12-evidence-screenshots)).
+> **Status:** deployed to Azure (East US, `Standard_B2ats_v2`) on 2026-11-13 from a
+> reviewed saved plan, validated, then destroyed. Public, in-VM (Azure Run Command)
+> and network-restriction checks passed after two validation-script fixes; results,
+> limitations and anything untested are in [`docs/validation-log.md`](docs/validation-log.md)
+> section 4, with sanitised output in [`docs/evidence/2026-11-13-deployment/`](docs/evidence/2026-11-13-deployment/).
+> Latest offline run: 10 passed, 0 failed, 0 skipped.
 
 ---
 
@@ -616,6 +617,24 @@ Save redacted screenshots in `docs/evidence/` with these names:
 - Use an opaque box, not blur or low-opacity highlighting (blur can sometimes be
   reversed). Crop out browser bookmarks, other tabs and notifications.
 - Check terminal prompts for usernames/hostnames you do not want public.
+
+### Deployment results (2026-11-13)
+
+| Area | Checked from | Result |
+| --- | --- | --- |
+| Landing page and `/health` (status + body) | Public, temporary /32 test source | PASS |
+| No-key SSH refused (`publickey` only) | Public | PASS |
+| cloud-init `status: done`, container `healthy`, local `/health` | In-VM, Azure Run Command | PASS |
+| Effective `sshd -T` (no password / keyboard-interactive / root; pubkey yes), admin key fingerprint | In-VM, Azure Run Command | PASS (after `/run/sshd` fix) |
+| Outbound leaves via the NIC's Standard public IP | In-VM, Azure Run Command | PASS |
+| Temporary test rule removed; NSG = admin /32 rules + deny; test sources blocked | Terraform + Azure CLI + public | PASS |
+| Daily 02:00 UK auto-shutdown | Azure CLI | Configured; not observed firing |
+| Key-authenticated SSH from the admin laptop (host key matched via Run Command) | Admin laptop | PASS |
+| Destroy + `verify-cleanup.sh` | Terraform + Azure CLI | PASS (12 destroyed; exit 0, 0 inconclusive) |
+
+**Ubuntu 24.04 gotcha:** `sshd -T` fails with `Missing privilege separation directory: /run/sshd`
+because SSH is socket-activated. Run `sudo install -d -m 0755 /run/sshd` first; both
+validation scripts now do this.
 
 ## 13. Cost
 

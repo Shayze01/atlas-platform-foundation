@@ -1,0 +1,24 @@
+REMOVE_START_UTC=2026-11-13T23:14:42Z
+plan_rc=0
+  # module.networking.azurerm_network_security_rule.allow_test_sources[0] will be destroyed
+  # (because index [0] is out of range for count)
+Plan: 0 to add, 0 to change, 1 to destroy.
+module.networking.azurerm_network_security_rule.allow_test_sources[0]: Destroying... [id=/subscriptions/<subscription-id>/resourceGroups/rg-atlas-foundation-dev/providers/Microsoft.Network/networkSecurityGroups/nsg-atlas-foundation-dev/securityRules/Allow-SSH-HTTP-From-Test-Temporary]
+module.networking.azurerm_network_security_rule.allow_test_sources[0]: Destruction complete after 2s
+
+Apply complete! Resources: 0 added, 0 changed, 1 destroyed.
+
+Outputs:
+
+auto_shutdown_schedule = {
+  "time" = "0200"
+  "timezone" = "GMT Standard Time"
+}
+health_url = "http://<vm-public-ip>/health"
+public_ip_address = "<vm-public-ip>"
+resource_group_name = "rg-atlas-foundation-dev"
+ssh_command = "ssh -i ~/.ssh/atlas_admin atlasadmin@<vm-public-ip>"
+vm_name = "vm-atlas-foundation-dev"
+web_url = "http://<vm-public-ip>/"
+apply_rc=0
+REMOVE_END_UTC=2026-11-13T23:14:54Z

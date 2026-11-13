@@ -126,7 +126,7 @@ if [[ "${key_ok}" == true ]]; then
     fail "container ${CONTAINER_NAME} health is '${out:-unknown}' (exit ${rc}: $(first_line "${WORK}/err"))"
   fi
 
-  out="$(ssh_key 'sudo -n sshd -T' 2>"${WORK}/err")"
+  out="$(ssh_key 'sudo -n install -d -m 0755 /run/sshd && sudo -n sshd -T' 2>"${WORK}/err")"
   rc=$?
   for setting in "${SSHD_EXPECT[@]}"; do
     if (( rc == 0 )) && grep -qix "${setting}" <<<"${out}"; then

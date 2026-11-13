@@ -1,0 +1,15 @@
+IN_VM_RERUN_START_UTC=2026-11-13T23:13:48Z (after /run/sshd fix; ADMIN_PUBKEY_FILE set)
+== in-vm checks for vm-atlas-foundation-dev (<vm-public-ip>) in rg-atlas-foundation-dev
+PASS: in-VM: cloud-init finished (CLOUD_INIT=status: done)
+PASS: in-VM: container atlas-web healthy (CONTAINER_HEALTH=healthy)
+PASS: in-VM: local /health returns HTTP 200 (LOCAL_HEALTH_CODE=200)
+PASS: in-VM: local /health body contains "status":"ok"
+PASS: in-VM: effective sshd: password authentication disabled (SSHD_passwordauthentication=no)
+PASS: in-VM: effective sshd: keyboard-interactive disabled (SSHD_kbdinteractiveauthentication=no)
+PASS: in-VM: effective sshd: root login disabled (SSHD_permitrootlogin=no)
+PASS: in-VM: effective sshd: public-key authentication enabled (SSHD_pubkeyauthentication=yes)
+PASS: in-VM: administrator public key SHA256:<admin-key-fingerprint-redacted> is in authorized_keys
+PASS: in-VM: outbound traffic leaves via the NIC's Standard public IP (OUTBOUND_IP=<vm-public-ip>)
+
+RESULT (in-vm): 10 passed, 0 failed
+rc=0 END_UTC=2026-11-13T23:14:23Z

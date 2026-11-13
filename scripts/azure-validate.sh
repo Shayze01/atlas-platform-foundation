@@ -100,6 +100,7 @@ echo "CLOUD_INIT=\$(cloud-init status 2>&1 | head -n 1)"
 echo "CONTAINER_HEALTH=\$(docker inspect -f '{{.State.Health.Status}}' ${CONTAINER_NAME} 2>&1 | head -n 1)"
 echo "LOCAL_HEALTH_CODE=\$(curl -s -o /tmp/atlas-health -w '%{http_code}' --max-time 5 http://127.0.0.1/health)"
 echo "LOCAL_HEALTH_BODY=\$(tr -d '\n' </tmp/atlas-health 2>/dev/null)"
+install -d -m 0755 /run/sshd  # Ubuntu 24.04 socket activation: dir is absent until sshd first runs; sshd -T refuses without it
 sshd -T -C user=${USER_NAME},host=validation,addr=192.0.2.1 2>&1 | grep -E '^(passwordauthentication|kbdinteractiveauthentication|permitrootlogin|pubkeyauthentication) ' | awk '{print "SSHD_" \$1 "=" \$2}'
 echo "AUTHORIZED_KEY_FPS=\$(ssh-keygen -lf /home/${USER_NAME}/.ssh/authorized_keys 2>/dev/null | awk '{print \$2}' | paste -sd, -)"
 echo "OUTBOUND_IP=\$(curl -4 -s --max-time 10 https://api.ipify.org)"

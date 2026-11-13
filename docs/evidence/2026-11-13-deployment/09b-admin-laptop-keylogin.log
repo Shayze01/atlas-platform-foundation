@@ -1,0 +1,15 @@
+# Reported by the administrator from their Windows laptop (PowerShell), 2026-11-13 ~23:20 UTC.
+# Pasted output; VM IP redacted. The private key (passphrase-protected) never left the laptop.
+# Host key accepted after its ED25519 fingerprint was matched via Azure Run Command (09-hostkey.log).
+> ssh -i ~/.ssh/atlas_admin atlasadmin@<vm-public-ip> "cloud-init status; docker inspect -f '{{.State.Health.Status}}' atlas-web; sudo install -d -m 0755 /run/sshd; sudo sshd -T | grep -Ei '^(passwordauthentication|kbdinteractiveauthentication|permitrootlogin|pubkeyauthentication) '"
+Warning: Permanently added '<vm-public-ip>' (ED25519) to the list of known hosts.
+Enter passphrase for key 'C:\Users\user\.ssh\atlas_admin':
+status: done
+healthy
+permitrootlogin no
+pubkeyauthentication yes
+passwordauthentication no
+kbdinteractiveauthentication no
+> curl.exe -s -w " HTTP %{http_code}`n" http://<vm-public-ip>/health
+{"status":"ok","service":"atlas-platform-foundation"}
+ HTTP 200

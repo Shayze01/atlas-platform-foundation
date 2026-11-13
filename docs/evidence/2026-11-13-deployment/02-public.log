@@ -1,0 +1,11 @@
+PUBLIC_START_UTC=2026-11-13T23:13:17Z source_ip=<test-ip-b>
+== public checks for vm-atlas-foundation-dev (<vm-public-ip>) in rg-atlas-foundation-dev
+Source address seen by the Internet: <test-ip-a>
+PASS: GET / returned HTTP 200
+PASS: GET / body contains 'Atlas Platform Foundation'
+PASS: GET /health returned HTTP 200
+PASS: GET /health body contains "status":"ok"
+PASS: SSH server refuses non-key login and offers only 'publickey'
+
+RESULT (public): 5 passed, 0 failed
+rc=0 END_UTC=2026-11-13T23:13:21Z

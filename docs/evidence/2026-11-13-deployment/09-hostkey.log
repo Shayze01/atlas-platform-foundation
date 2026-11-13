@@ -1,0 +1,7 @@
+HOSTKEY_CHECK_UTC=2026-11-13T23:17:48Z via Azure Run Command
+Enable succeeded: 
+[stdout]
+256 SHA256:Kk8+pxM3zOLQELEZtzMmE57OOwDZPFjJ2P0NyeHbzaU root@atlas-web-01 (ED25519)
+
+[stderr]
+
