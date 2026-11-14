@@ -137,6 +137,10 @@ def main():
         ok = bool(rm) and all(s.get("if") == "always()" for s in rm)
         print(("PASS" if ok else "FAIL") + ": apply job removes temporary runner access in an always() step")
         failures += 0 if ok else 1
+        ok = "has_changes" not in str(dj["apply"].get("if")) and any(
+            "has_changes == 'true'" in str(st.get("if")) and "terraform apply" in (st.get("run") or "") for st in dj["apply"]["steps"])
+        print(("PASS" if ok else "FAIL") + ": apply job also runs for a no-change plan (validates/destroys a kept workload); only the apply step is skipped")
+        failures += 0 if ok else 1
         fc = dj["failure-cleanup"]
         ok = "always()" in str(fc.get("if")) and "needs.apply.result == 'failure'" in str(fc.get("if")) and "cancelled" in str(fc.get("if"))
         print(("PASS" if ok else "FAIL") + ": failure-cleanup runs when apply/validation fails or is cancelled")

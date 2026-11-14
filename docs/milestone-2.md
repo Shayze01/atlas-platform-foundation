@@ -102,7 +102,10 @@ Raw plans, state, tfvars, credentials and personal IPs are not published:
 - **Reviewed plan retention:** the binary plan is uploaded to `plans/<run-id>-<attempt>.tfplan`
   in the private, Entra-only state container. The apply job downloads it, verifies the
   SHA-256 recorded by the plan job, applies exactly that file (Terraform also rejects
-  it if state changed since planning), then deletes it. A lifecycle rule deletes any
+  it if state changed since planning), then deletes it. If the plan has no changes
+  (for example a workload left running with `keep-running`), the apply job still runs
+  after approval: it skips the apply but validates, and with `destroy` removes, the
+  existing workload. A lifecycle rule deletes any
   leftover plan after 7 days.
 
 ## 4. Workflows

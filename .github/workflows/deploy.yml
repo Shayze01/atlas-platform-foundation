@@ -1,6 +1,7 @@
 # Owner-triggered deployment from trusted main:
 #   plan (azure-plan, Reader)  ->  your approval (azure-deploy)  ->  apply exactly that
-#   plan, validate with temporary /32 runner access, remove it, optionally destroy.
+#   plan (skipped if there are no changes), validate with temporary /32 runner access,
+#   remove it, optionally destroy.
 # failure-cleanup (azure-destroy) destroys the workload if apply/validation failed or
 # was cancelled. Raw plans, state and variable values are never printed or uploaded
 # as artifacts; the reviewed plan is kept in the private state container.
@@ -93,7 +94,9 @@ jobs:
   apply:
     name: Apply reviewed plan and validate
     needs: plan
-    if: github.ref == 'refs/heads/main' && needs.plan.outputs.has_changes == 'true'
+    # Runs even when the plan has no changes, so an existing (kept-running) workload is
+    # still validated and, with after_validation=destroy, destroyed.
+    if: github.ref == 'refs/heads/main' && needs.plan.result == 'success'
     runs-on: ubuntu-24.04
     environment: azure-deploy
     timeout-minutes: 60
@@ -125,15 +128,17 @@ jobs:
       - name: Terraform init (remote state, Entra ID)
         run: ./scripts/ci/backend-init.sh 2>&1 | ./scripts/ci/sanitize.sh
       - name: Fetch the reviewed plan and verify its SHA-256
+        if: needs.plan.outputs.has_changes == 'true'
         run: |
           az storage blob download --auth-mode login --account-name "${TFSTATE_STORAGE_ACCOUNT}" \
             --container-name "${TFSTATE_CONTAINER}" --name "${PLAN_BLOB}" --file tfplan \
             --no-progress --only-show-errors --output none
           echo "${PLAN_SHA256}  tfplan" | sha256sum -c --strict -
       - name: Apply exactly the reviewed plan
+        if: needs.plan.outputs.has_changes == 'true'
         run: terraform apply -input=false -lock-timeout=5m -no-color tfplan 2>&1 | ./scripts/ci/sanitize.sh
       - name: Delete the stored plan
-        if: always()
+        if: always() && needs.plan.outputs.has_changes == 'true'
         run: |
           rm -f tfplan
           az storage blob delete --auth-mode login --account-name "${TFSTATE_STORAGE_ACCOUNT}" \
