@@ -15,7 +15,10 @@
 #
 # Usage:
 #   bootstrap/bootstrap.sh --tenant <tenant-id> --subscription <subscription-id> \
-#     --owner-tag <name> [--github-repo Shayze01/atlas-platform-foundation] [--location eastus] [--apply]
+#     --owner-tag <name> [--github-repo Shayze01/atlas-platform-foundation \
+#     --github-owner-id <n> --github-repo-id <n>] [--location eastus] [--apply]
+#   The IDs default to this repository's (99360721 / 1457226611); with another
+#   --github-repo, pass both: gh api repos/<owner>/<repo> --jq '.owner.id, .id'
 #
 # Run as yourself (Owner or User Access Administrator + Contributor on the subscription),
 # for example in Azure Cloud Shell. It never deletes anything and never touches
@@ -35,13 +38,16 @@ OIDC_AUDIENCE="api://AzureADTokenExchange"
 ALLOWED_RGS=("${STATE_RG}" "${WORKLOAD_RG}")
 
 TENANT="" SUBSCRIPTION="" OWNER_TAG="" REPO="Shayze01/atlas-platform-foundation" LOCATION="eastus" APPLY=false
-usage() { sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+OWNER_ID="" REPO_ID=""
+usage() { sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 while (( $# )); do
   case "$1" in
     --tenant) TENANT="${2:-}"; shift 2 ;;
     --subscription) SUBSCRIPTION="${2:-}"; shift 2 ;;
     --owner-tag) OWNER_TAG="${2:-}"; shift 2 ;;
     --github-repo) REPO="${2:-}"; shift 2 ;;
+    --github-owner-id) OWNER_ID="${2:-}"; shift 2 ;;
+    --github-repo-id) REPO_ID="${2:-}"; shift 2 ;;
     --location) LOCATION="${2:-}"; shift 2 ;;
     --apply) APPLY=true; shift ;;
     -h|--help) usage ;;
@@ -53,6 +59,11 @@ GUID='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
 [[ "${TENANT}" =~ ${GUID} ]] || { echo "ERROR: --tenant must be a lowercase GUID"; exit 2; }
 [[ "${SUBSCRIPTION}" =~ ${GUID} ]] || { echo "ERROR: --subscription must be a lowercase GUID"; exit 2; }
 [[ "${REPO}" =~ ^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$ ]] || { echo "ERROR: --github-repo must be owner/name"; exit 2; }
+if [[ -z "${OWNER_ID}${REPO_ID}" && "${REPO}" == "Shayze01/atlas-platform-foundation" ]]; then
+  OWNER_ID=99360721 REPO_ID=1457226611
+fi
+[[ "${OWNER_ID}" =~ ^[1-9][0-9]*$ && "${REPO_ID}" =~ ^[1-9][0-9]*$ ]] || {
+  echo "ERROR: --github-owner-id and --github-repo-id must be numeric (gh api repos/${REPO} --jq '.owner.id, .id')"; exit 2; }
 [[ "${LOCATION}" =~ ^[a-z0-9]+$ ]] || { echo "ERROR: --location must be an Azure region name such as eastus"; exit 2; }
 [[ "${OWNER_TAG}" =~ ^[A-Za-z0-9@._\ -]{1,64}$ ]] || { echo "ERROR: --owner-tag is required (letters, digits, space, @ . _ -)"; exit 2; }
 command -v az >/dev/null 2>&1 || { echo "ERROR: Azure CLI (az) not found"; exit 2; }
@@ -189,11 +200,23 @@ echo; echo "==> 6. Federated credentials (GitHub OIDC; exact subject, no wildcar
 # Subjects use the repository's customised OIDC claim template (repo, context, ref),
 # set by scripts/github/setup-github.sh: a token is only accepted for the named
 # environment AND refs/heads/main. Any other branch, PR, fork or environment is rejected.
-subject() { printf 'repo:%s:environment:%s:ref:refs/heads/main' "${REPO}" "$1"; }
+# GitHub uses the immutable format (owner and repository IDs in the repo segment) for
+# repositories created after 2026-07-15, so a recreated repo with the same name cannot match.
+subject() { printf 'repo:%s@%s/%s@%s:environment:%s:ref:refs/heads/main' \
+  "${REPO%%/*}" "${OWNER_ID}" "${REPO#*/}" "${REPO_ID}" "$1"; }
 fed() { # identity credential-name environment
-  run "federated credential $2" -- identity federated-credential create --name "$2" \
+  local want current action=create
+  want="$(subject "$3")"
+  if current="$(az identity federated-credential show --name "$2" --identity-name "$1" \
+       --resource-group "${STATE_RG}" --query "[issuer, subject, join(',', audiences)]" --output tsv 2>/dev/null)"; then
+    if [[ "$(tr '\n' ' ' <<<"${current}")" == "${OIDC_ISSUER} ${want} ${OIDC_AUDIENCE} " ]]; then
+      echo "OK: $2 already trusts ${want}"; return 0
+    fi
+    action=update
+  fi
+  run "${action} federated credential $2" -- identity federated-credential "${action}" --name "$2" \
     --identity-name "$1" --resource-group "${STATE_RG}" --issuer "${OIDC_ISSUER}" \
-    --subject "$(subject "$3")" --audiences "${OIDC_AUDIENCE}"
+    --subject "${want}" --audiences "${OIDC_AUDIENCE}"
 }
 fed "${PLAN_ID}" gha-azure-plan-main azure-plan
 fed "${DEPLOY_ID}" gha-azure-deploy-main azure-deploy
