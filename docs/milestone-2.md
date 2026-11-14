@@ -70,7 +70,10 @@ Terraform creates and deletes the group; a `moved` block maps the old state addr
   run if a client secret, certificate or access key is present in the environment.
 - **Federated credentials are exact.** The repository's OIDC subject template includes
   `repo`, `context` and `ref`, so each identity trusts exactly
-  `repo:Shayze01/atlas-platform-foundation:environment:<env>:ref:refs/heads/main`.
+  `repo:Shayze01@99360721/atlas-platform-foundation@1457226611:environment:<env>:ref:refs/heads/main`.
+  GitHub always uses this immutable format (owner and repository IDs) for repositories
+  created after 2026-07-15, and the IDs cannot be removed from the template. If the
+  repository were deleted and its name reused, the new repository's tokens would not match.
   A token from another branch, a pull request, a fork or another environment does not
   match and Azure refuses it (fails closed).
 - **Three layers keep Azure jobs on trusted `main`:** workflow triggers are only
@@ -194,7 +197,7 @@ approve the `azure-deploy` review, and watch validation and teardown.
 | State blob or container deleted | Soft delete keeps blobs and containers for 14 days: `az storage blob undelete` / `az storage container restore`. |
 | Storage account deletion attempted | Blocked by the `CanNotDelete` lock (only teardown removes it). |
 | Workload left running (failed cleanup, `keep-running`) | Run **Destroy**. Fallback from Cloud Shell: delete the resources in `rg-atlas-foundation-dev` (keep the group), e.g. `az resource list -g rg-atlas-foundation-dev -o table` then `az vm delete ...`; or delete the group and re-run the bootstrap. |
-| OIDC login fails (`AADSTS70021`, subject mismatch) | Check the run is on `main`, the environment name, and that the OIDC subject template was applied (step 5.3). |
+| OIDC login fails (`AADSTS70021`, subject mismatch) | Check the run is on `main`, the environment name, and that the OIDC subject template was applied (step 5.3). Compare `gh api repos/Shayze01/atlas-platform-foundation/actions/oidc/customization/sub` (`sub_claim_prefix`) with the federated credential subjects; re-running `bootstrap/bootstrap.sh` updates subjects that differ. |
 | Plan rejected as stale | Something changed state after planning; run Deploy again for a fresh plan. |
 
 ## 8. Costs (estimates, not yet measured)
@@ -222,7 +225,7 @@ notifies. Check Cost Management after every live session.
 ## 9. Not yet tested
 
 - No part of the bootstrap, GitHub setup or workflows has run against real Azure or
-  GitHub; the OIDC subject format, role sufficiency (e.g. Reader for planning, Run
+  GitHub; the OIDC token being accepted by Azure, role sufficiency (e.g. Reader for planning, Run
   Command with Contributor), storage lifecycle filters and environment approval flow
   are verified only by reading documentation and by stubbed tests.
 - `ci.yml` will run for the first time on this pull request.

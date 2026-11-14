@@ -353,3 +353,31 @@ Fixes covered:
 
 Still not verified live: everything listed at the end of section 6.
 
+
+## 8. OIDC subject fix after live GitHub setup (executed 2026-11-14)
+
+**Live observation (not an offline check).** After the owner ran `bootstrap/bootstrap.sh --apply`
+and `scripts/github/setup-github.sh --apply`, GitHub's API reported for this repository
+`use_immutable_subject: true` and `sub_claim_prefix: repo:Shayze01@99360721/atlas-platform-foundation@1457226611`.
+GitHub always uses this immutable format for repositories created after 2026-07-15. The
+federated credentials created by the first bootstrap expected the old name-only subject
+(`repo:Shayze01/atlas-platform-foundation:environment:<env>:ref:refs/heads/main`), so
+Azure sign-in would have failed (`AADSTS70021`). No Deploy run had been started.
+
+Fix: `bootstrap.sh` builds the immutable subject from the owner and repository IDs
+(defaults for this repository; `--github-owner-id`/`--github-repo-id` for another
+`--github-repo`), and re-running it updates a federated credential whose subject differs
+instead of skipping it. `setup-github.sh` sets `use_immutable_subject: true` explicitly.
+Raw output: [`evidence/offline-validate-2026-11-14-m2-r3.log`](evidence/offline-validate-2026-11-14-m2-r3.log).
+
+### Summary: 12 passed, 0 failed, 0 skipped (`REQUIRE_ALL=1`, exit 0)
+
+| Check | Result |
+| --- | --- |
+| `terraform test` | PASS - 17/17 |
+| Script behaviour tests | PASS - 138/138 (4 new: legacy subjects updated in place, correct subjects unchanged, other repo without IDs refused, non-numeric ID refused) |
+| Workflow security policy tests, actionlint, ShellCheck | PASS |
+| Local web service test (Docker) | PASS - 9/9 |
+
+Still not verified live: Azure accepting the GitHub token, role sufficiency, lifecycle filters
+and the approval flow (section 6 list, minus the GitHub environment settings now observed).

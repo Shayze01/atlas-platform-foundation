@@ -71,15 +71,34 @@ log_lacks "--role (Owner|User Access Administrator|Role Based Access Control Adm
 log_lacks "--scope /subscriptions/${S}( |\$)"
 log_lacks "--scope /subscriptions/${S}/resourceGroups/rg-atlas-tfstate( |\$)"
 log_count "federated-credential create" 3
-log_has "--subject repo:Shayze01/atlas-platform-foundation:environment:azure-plan:ref:refs/heads/main "
-log_has "--subject repo:Shayze01/atlas-platform-foundation:environment:azure-deploy:ref:refs/heads/main "
-log_has "--subject repo:Shayze01/atlas-platform-foundation:environment:azure-destroy:ref:refs/heads/main "
+log_has "--subject repo:Shayze01@99360721/atlas-platform-foundation@1457226611:environment:azure-plan:ref:refs/heads/main "
+log_has "--subject repo:Shayze01@99360721/atlas-platform-foundation@1457226611:environment:azure-deploy:ref:refs/heads/main "
+log_has "--subject repo:Shayze01@99360721/atlas-platform-foundation@1457226611:environment:azure-destroy:ref:refs/heads/main "
 log_lacks "--subject [^ ]*\\*"
 log_lacks "NetworkWatcherRG"
 bad_rg="$(grep -oE -- '--(resource-group|name) rg-[^ ]+' "${STUB_LOG}" | awk '{print $2}' | sort -u | grep -vxE 'rg-atlas-tfstate|rg-atlas-foundation-dev' || true)"
 [[ -z "${bad_rg}" ]] || note "touched other resource groups: ${bad_rg}"
 log_lacks "^az (group|resource|identity|lock) delete"
 done_case
+
+run_case "bootstrap --apply: legacy name-only OIDC subjects are updated to the immutable format" 0 ../bootstrap/bootstrap.sh \
+  PATH="${M2PATH}" IDENTITIES_EXIST=1 FED_SUBJECT=legacy -- "${BOOT[@]}" --apply
+log_count "federated-credential update" 3; log_count "federated-credential create" 0
+log_has "update --name gha-azure-deploy-main .*--subject repo:Shayze01@99360721/atlas-platform-foundation@1457226611:environment:azure-deploy:ref:refs/heads/main "
+log_lacks "--subject repo:Shayze01/atlas-platform-foundation:"
+done_case
+
+run_case "bootstrap --apply: correct OIDC subjects are left unchanged" 0 ../bootstrap/bootstrap.sh \
+  PATH="${M2PATH}" IDENTITIES_EXIST=1 FED_SUBJECT=immutable -- "${BOOT[@]}" --apply
+has "OK: gha-azure-plan-main already trusts"; log_count "federated-credential (create|update)" 0; done_case
+
+run_case "bootstrap: another --github-repo without its IDs -> exit 2" 2 ../bootstrap/bootstrap.sh PATH="${M2PATH}" -- \
+  "${BOOT[@]}" --github-repo someone/fork
+has "must be numeric"; no_writes; done_case
+
+run_case "bootstrap: non-numeric --github-repo-id -> exit 2" 2 ../bootstrap/bootstrap.sh PATH="${M2PATH}" -- \
+  "${BOOT[@]}" --github-owner-id 99360721 --github-repo-id 'x*'
+has "must be numeric"; no_writes; done_case
 
 echo; echo "== bootstrap/teardown.sh =="
 TD=(--tenant "${T}" --subscription "${S}")
@@ -133,7 +152,7 @@ has "WOULD RUN \\(environment azure-deploy\\)"; lacks "198\\.51\\.100\\.20"; lac
 log_lacks "^gh (api -X|variable|secret)"; done_case
 
 run_case "github setup --apply: self-approvable reviewer only on azure-deploy, main-only, OIDC claims" 0 github/setup-github.sh "${GHV[@]}" -- --apply
-log_has '"include_claim_keys":\["repo","context","ref"\]'
+log_has '"include_claim_keys":\["repo","context","ref"\],"use_immutable_subject":true'
 log_has '"default_workflow_permissions":"read"'
 log_count '"prevent_self_review":false' 3
 log_count '"reviewers":\[\{"type":"User","id":12345\}\]' 1

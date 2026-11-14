@@ -5,6 +5,7 @@
 #   STATE_RG_NAMES / WORKLOAD_NAMES  newline-separated resource names ('az resource list')
 #   WORKLOAD_COUNT              number printed for 'length(@)' queries
 #   IDENTITIES_EXIST            1 = 'az identity show' succeeds
+#   FED_SUBJECT                 (unset)|legacy|immutable  ('az identity federated-credential show')
 #   STATE_BLOB                  notfound|empty|resources|denied|braces|null|noresources|wrongtype|malformed|badmode|v3|emptyfile
 #   NSG_M2                      exists|notfound|error   ('az network nsg show')
 #   RULE_M2                     absent|present|error    ('az network nsg rule show')
@@ -27,6 +28,12 @@ case "${args}" in
   "resource list"*)
     rg="$(rg_of "$@")"
     if [[ "${rg}" == rg-atlas-tfstate ]]; then printf '%s\n' "${STATE_RG_NAMES:-}"; else printf '%s\n' "${WORKLOAD_NAMES:-}"; fi
+    exit 0 ;;
+  "identity federated-credential show"*)
+    [[ -n "${FED_SUBJECT:-}" ]] || { echo "ERROR: (NotFound) Federated identity credential not found." >&2; exit 3; }
+    env="$(grep -oE 'gha-azure-[a-z]+-main' <<<"${args}" | sed -E 's/^gha-(azure-[a-z]+)-main$/\1/')"
+    if [[ "${FED_SUBJECT}" == legacy ]]; then echo "repo:Shayze01/atlas-platform-foundation:environment:${env}:ref:refs/heads/main"
+    else echo "repo:Shayze01@99360721/atlas-platform-foundation@1457226611:environment:${env}:ref:refs/heads/main"; fi
     exit 0 ;;
   "identity show"*)
     [[ "${IDENTITIES_EXIST:-0}" == 1 ]] || { echo "ERROR: (ResourceNotFound) The Resource was not found." >&2; exit 3; }

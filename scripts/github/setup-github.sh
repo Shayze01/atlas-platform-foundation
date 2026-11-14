@@ -62,7 +62,7 @@ do_gh() {
 TMP="$(mktemp -d)"; trap 'rm -rf "${TMP}"' EXIT
 json() { local f="${TMP}/$1.json"; cat >"${f}"; printf '%s' "${f}"; }
 
-do_gh "OIDC subject: repo + environment + ref" "$(json oidc <<<'{"use_default":false,"include_claim_keys":["repo","context","ref"]}')" \
+do_gh "OIDC subject: repo + environment + ref" "$(json oidc <<<'{"use_default":false,"include_claim_keys":["repo","context","ref"],"use_immutable_subject":true}')" \
   api -X PUT "repos/${REPO}/actions/oidc/customization/sub" --input -
 do_gh "GITHUB_TOKEN read-only by default" "$(json token <<<'{"default_workflow_permissions":"read","can_approve_pull_request_reviews":false}')" \
   api -X PUT "repos/${REPO}/actions/permissions/workflow" --input -
