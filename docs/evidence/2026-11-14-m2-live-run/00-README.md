@@ -31,15 +31,18 @@ Workload lifetime: created by `terraform apply` 11:16:58-11:17:39, destroyed by 
 
 - Extracted from the public GitHub job logs: step output only. Command echo, `env:` and
   action-input blocks were dropped.
-- In the job log, GitHub had already masked secrets as `***` (administrator CIDR, SSH
-  public key, owner tag, client IDs), and `scripts/ci/sanitize.sh` had replaced IP
-  addresses, GUIDs and the public key in piped output.
+- In the job log, GitHub had already masked the environment secrets as `***`
+  (administrator CIDR, SSH public key, owner tag). The client ID is a variable, not a
+  secret: `azure/login` masks it only from its own step onwards, so it is still shown
+  in clear in the `env:` blocks of the earlier steps. `scripts/ci/sanitize.sh` had
+  replaced IP addresses, GUIDs and the public key in piped output.
 - Extraction additionally replaced every remaining GUID (including truncated
   subscription IDs in Terraform's `Still destroying... [id=/subscriptions/...]` progress
   lines, which `sanitize.sh` did not catch) with `<guid>` and every IPv4 address
   outside `10.0.0.0/8` with `<ip>`.
-- Note: the public job log itself still shows the subscription and tenant IDs (workflow
-  `env:` blocks and those truncated progress lines). They are identifiers, not
+- Note: the public job log itself still shows the subscription and tenant IDs (in every
+  step's `env:` block and in those truncated progress lines) and the client ID (in
+  `env:` blocks before the login step). They are identifiers, not
   credentials, and the workflows are unchanged by this documentation PR.
 
 Not stored anywhere public: the raw plan, the state, the administrator IP, the SSH key
