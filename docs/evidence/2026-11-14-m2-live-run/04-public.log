@@ -1,0 +1,16 @@
+# Source: GitHub Actions run 43588089749 (Deploy, workflow_dispatch, main @ 4c0674b, after_validation=destroy)
+# Extracted from the public job log: step output only (command echo and env blocks dropped).
+# Additional redaction: GUIDs -> <guid>, IPv4 addresses -> <ip>. GitHub had already masked secrets as ***;
+# sanitize.sh had already replaced IPs, GUIDs and the public key in piped output.
+
+### Step: Public endpoint checks (from the runner) (2026-11-14 11:18:34Z -> 11:18:39Z)
+== public checks for vm-atlas-foundation-dev (<ip>) in rg-atlas-foundation-dev
+Source address seen by the Internet: <ip>
+PASS: GET / returned HTTP 200
+PASS: GET / body contains 'Atlas Platform Foundation'
+PASS: GET /health returned HTTP 200
+PASS: GET /health body contains "status":"ok"
+PASS: SSH server refuses non-key login and offers only 'publickey'
+
+RESULT (public): 5 passed, 0 failed, 0 inconclusive
+

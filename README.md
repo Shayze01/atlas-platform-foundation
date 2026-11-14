@@ -6,8 +6,9 @@ reproducible Azure landing spot for a containerised web service, built with
 
 **Milestone 2 (in progress)** adds the deployment engine: pull-request CI, GitHub
 Actions OIDC to Azure (no stored secrets), Terraform remote state in Azure Storage,
-an approved plan/apply workflow with automatic validation and cleanup. Code and
-offline tests only so far - nothing has been run against Azure or GitHub yet. See
+an approved plan/apply workflow with automatic validation and cleanup. **First live run
+passed on 2026-11-14** (plan, approval, apply, validation, destroy); failure cleanup, the
+Destroy workflow, auto-shutdown and complete teardown are not live-tested yet. See
 [`docs/milestone-2.md`](docs/milestone-2.md) and [section 17](#17-milestone-2-deployment-engine).
 
 > **Status:** deployed to Azure (East US, `Standard_B2ats_v2`) on 2026-11-13 from a
@@ -16,6 +17,12 @@ offline tests only so far - nothing has been run against Azure or GitHub yet. Se
 > limitations and anything untested are in [`docs/validation-log.md`](docs/validation-log.md)
 > section 4, with sanitised output in [`docs/evidence/2026-11-13-deployment/`](docs/evidence/2026-11-13-deployment/).
 > Latest offline run (2026-11-14, Milestone 2 branch): `validate.sh` (`REQUIRE_ALL=1`) 12 passed, 0 failed, 0 skipped; `terraform test` 17/17; script tests 139/139 - see section 15.
+>
+> Latest live run (2026-11-14, Milestone 2 Deploy run [43588089749](https://github.com/Shayze01/atlas-platform-foundation/actions/runs/43588089749)):
+> 11 resources applied from the reviewed plan, public 5/5, in-VM 10/10, blocked 3/3,
+> 11 destroyed with the workload group kept empty - see
+> [`docs/validation-log.md`](docs/validation-log.md) section 9 and
+> [`docs/evidence/2026-11-14-m2-live-run/`](docs/evidence/2026-11-14-m2-live-run/).
 
 ---
 
@@ -873,7 +880,7 @@ Full design, trust boundaries, owner setup, recovery and costs:
   identity = Contributor on it; both = Blob Data Contributor on the state container
   only. Neither can assign roles.
 - **State**: Azure Storage backend, Entra ID auth only, blob-lease locking,
-  versioning, soft delete, delete lock (`bootstrap/bootstrap.sh`, owner-run, not run yet).
+  versioning, soft delete, delete lock (`bootstrap/bootstrap.sh`, owner-run; applied 2026-11-14).
 - **Deploy** (`deploy.yml`, manual from `main`): plan -> sanitised summary -> your
   approval -> apply exactly that plan -> temporary runner /32 -> public + in-VM checks
   -> remove rule -> blocked check -> destroy (default). Failures trigger cleanup.
@@ -883,4 +890,8 @@ Full design, trust boundaries, owner setup, recovery and costs:
   deletes the state backend last.
 - Scheduled runs, failure cleanup and the 02:00 UK auto-shutdown are **safeguards, not
   spending caps**.
+- **Live status (2026-11-14):** one Deploy run passed end to end (OIDC, approval,
+  SHA-checked apply, validation, temporary access removed, destroy). **Not live-tested:**
+  failure cleanup, `destroy.yml` (manual/nightly), auto-shutdown firing, `keep-running`,
+  `teardown.sh`. Costs are estimates pending billing data.
 

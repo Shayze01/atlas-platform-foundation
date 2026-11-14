@@ -1,0 +1,8 @@
+# Source: GitHub Actions run 43588089749 (Deploy, workflow_dispatch, main @ 4c0674b, after_validation=destroy)
+# Extracted from the public job log: step output only (command echo and env blocks dropped).
+# Additional redaction: GUIDs -> <guid>, IPv4 addresses -> <ip>. GitHub had already masked secrets as ***;
+# sanitize.sh had already replaced IPs, GUIDs and the public key in piped output.
+
+### Step: Remove temporary runner access (always) (2026-11-14 11:19:18Z -> 11:19:23Z)
+Temporary rule Allow-CI-Runner-Temporary confirmed absent
+

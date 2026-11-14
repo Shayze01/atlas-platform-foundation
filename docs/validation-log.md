@@ -381,3 +381,57 @@ Raw output: [`evidence/offline-validate-2026-11-14-m2-r3.log`](evidence/offline-
 
 Still not verified live: Azure accepting the GitHub token, role sufficiency, lifecycle filters
 and the approval flow (section 6 list, minus the GitHub environment settings now observed).
+
+## 9. First live Milestone 2 run (executed 2026-11-14, East US)
+
+GitHub Actions run [43588089749](https://github.com/Shayze01/atlas-platform-foundation/actions/runs/43588089749)
+(Deploy, `main` at `4c0674b`, `after_validation = destroy`). Sanitised step output:
+[`evidence/2026-11-14-m2-live-run/`](evidence/2026-11-14-m2-live-run/). Times are UTC.
+
+Before the run, the owner ran `bootstrap/bootstrap.sh` (dry run, then `--apply`: 16
+changes) and `scripts/github/setup-github.sh` (dry run, then `--apply`), then updated
+the three federated credential subjects to the immutable format (section 8). Those
+outputs were reviewed in the working session and are not stored in the repository.
+
+### 9.1 Live-tested in this run
+
+| # | Behaviour | Result | Evidence |
+| --- | --- | --- | --- |
+| 1 | OIDC login, plan identity, `azure-plan` immutable subject | PASS | `01-plan.log` |
+| 2 | Remote state backend init with Entra ID (no storage keys) | PASS | `01-plan.log`, `02-apply.log` |
+| 3 | Plan with Reader on the (empty) workload group: `add=11 change=0 destroy=0 replace=0` | PASS | `01-plan.log` |
+| 4 | Sanitised summary and 9 fail-closed policy checks (size, region, disk, password auth, 02:00 shutdown, /32 sources, Internet deny, no temporary rule, no implicit outbound) | PASS - 9/9 | `01-plan.log` |
+| 5 | Reviewed plan stored privately, `azure-deploy` approval required and given by the owner | PASS | `01-plan.log`, run page |
+| 6 | OIDC login, deploy identity, `azure-deploy` immutable subject | PASS | `02-apply.log` |
+| 7 | Apply refuses unless the stored plan matches the reviewed SHA-256 (`tfplan: OK`) | PASS | `02-apply.log` |
+| 8 | Apply exactly that plan: 11 added, 0 changed, 0 destroyed; stored plan deleted | PASS | `02-apply.log` |
+| 9 | Temporary `/32` rule for the runner added (TCP 22, 80); web service healthy after 45 s | PASS | `03-temp-access-add.log` |
+| 10 | Public checks: `/` 200 + page text, `/health` 200 + ok, SSH offers only `publickey` | PASS - 5/5 | `04-public.log` |
+| 11 | In-VM checks with Run Command under Contributor: cloud-init done, container healthy, local `/health`, effective sshd settings, admin key present, outbound via NIC public IP | PASS - 10/10 | `05-in-vm.log` |
+| 12 | Temporary rule removed and confirmed absent | PASS | `06-temp-access-remove.log` |
+| 13 | NSG has exactly the intended rules; HTTP and SSH from the runner time out | PASS - 3/3 | `07-blocked.log` |
+| 14 | Destroy after validation: 11 destroyed; state tracks no resources; workload group kept and empty; VM, disk, NIC, IP, NSG, VNet not found | PASS | `08-destroy-verify-cleanup.log` |
+| 15 | No administrator IP, SSH key or owner tag in the job log (masked or sanitised) | PASS (checked by search) | all files |
+
+### 9.2 Not live-tested yet
+
+- **Failure cleanup** (`failure-cleanup` job): skipped because nothing failed. Destroy
+  after a failed or cancelled apply has only stubbed tests and pipefail injection.
+- **`azure-destroy` federated credential and `destroy.yml`**: neither the manual nor the
+  scheduled (03:30 UTC) Destroy workflow has run. The routine destroy above ran inside
+  the Deploy job under `azure-deploy`.
+- **02:00 UK auto-shutdown**: the schedule was planned with the approved settings (policy
+  check), but the VM existed for about 5 minutes; it has never been observed firing.
+- **`keep-running`** option, shared-concurrency blocking, state-lock contention and
+  recovery (lease break, version restore, soft-delete restore), lifecycle-rule expiry of
+  plans and old state versions.
+- **Plan with existing resources** (Reader refreshing a non-empty group).
+- **`bootstrap/teardown.sh`** (complete teardown) has not been run.
+
+### 9.3 Cost (estimate, pending billing data)
+
+By list prices in `docs/milestone-2.md` section 8, about 5 minutes of VM, public IP and
+disk is roughly £0.001 excluding VAT (under £0.01 including VAT). The persistent
+bootstrap resources are estimated at well under £0.01/month. Not yet confirmed against
+Azure Cost Management, which reports with a delay.
+

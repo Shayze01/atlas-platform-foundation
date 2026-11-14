@@ -1,0 +1,89 @@
+# Source: GitHub Actions run 43588089749 (Deploy, workflow_dispatch, main @ 4c0674b, after_validation=destroy)
+# Extracted from the public job log: step output only (command echo and env blocks dropped).
+# Additional redaction: GUIDs -> <guid>, IPv4 addresses -> <ip>. GitHub had already masked secrets as ***;
+# sanitize.sh had already replaced IPs, GUIDs and the public key in piped output.
+
+### Step: Azure login (OIDC, plan identity) (2026-11-14 11:02:32Z -> 11:02:41Z)
+Running Azure CLI Login.
+[command]/usr/bin/az cloud set -n azurecloud
+Done setting cloud: "azurecloud"
+Federated token details:
+ issuer - https://token.actions.githubusercontent.com
+ subject claim - repo:Shayze01@99360721/atlas-platform-foundation@1457226611:environment:azure-plan:ref:refs/heads/main
+ audience - api://AzureADTokenExchange
+ job_workflow_ref - Shayze01/atlas-platform-foundation/.github/workflows/deploy.yml@refs/heads/main
+Attempting Azure CLI login by using OIDC...
+Subscription is set successfully.
+Azure CLI login succeeds by using OIDC.
+
+### Step: Terraform init (remote state, Entra ID) (2026-11-14 11:02:41Z -> 11:02:47Z)
+Initializing the backend...
+
+Successfully configured the backend "azurerm"! Terraform will automatically
+use this backend unless the backend configuration changes.
+Initializing modules...
+- compute in modules/compute
+- networking in modules/networking
+- test.tests.compute.vm_uses_ssh_keys_only in modules/compute
+- test.tests.compute.public_ip_attached_to_nic_for_explicit_outbound in modules/compute
+- test.tests.compute.daily_auto_shutdown_at_0200_uk_time in modules/compute
+- test.tests.compute.auto_shutdown_can_be_disabled in modules/compute
+- test.tests.networking.nsg_allows_only_admin_ip_on_ssh_and_http in modules/networking
+Initializing provider plugins...
+- Reusing previous version of hashicorp/azurerm from the dependency lock file
+- Installing hashicorp/azurerm v5.13.0...
+- Installed hashicorp/azurerm v5.13.0 (signed by HashiCorp)
+
+Terraform has been successfully initialized!
+
+### Step: Terraform plan (full output kept off the log; no output on success) (2026-11-14 11:02:47Z -> 11:02:52Z)
+
+### Step: Sanitised plan summary (2026-11-14 11:02:52Z -> 11:02:52Z)
+### Terraform plan (sanitised: addresses and actions only)
+
+- Counts: `add=11 change=0 destroy=0 replace=0`
+- Plan SHA-256: `de53be586c8556efe367ca8eb35cf473a28909fbf4c5bbfef657d9d52651c007`
+
+| Action | Resource address |
+| --- | --- |
+| create | `module.compute.azurerm_dev_test_global_vm_shutdown_schedule.this[0]` |
+| create | `module.compute.azurerm_linux_virtual_machine.this` |
+| create | `module.compute.azurerm_network_interface.vm` |
+| create | `module.compute.azurerm_public_ip.vm` |
+| create | `module.networking.azurerm_network_security_group.workload` |
+| create | `module.networking.azurerm_network_security_rule.allow_http_from_admin` |
+| create | `module.networking.azurerm_network_security_rule.allow_ssh_from_admin` |
+| create | `module.networking.azurerm_network_security_rule.deny_internet_inbound` |
+| create | `module.networking.azurerm_subnet.workload` |
+| create | `module.networking.azurerm_subnet_network_security_group_association.workload` |
+| create | `module.networking.azurerm_virtual_network.this` |
+
+#### Deployment details (allowlisted values only)
+
+| Setting | Planned value |
+| --- | --- |
+| VM size | `Standard_B2ats_v2` |
+| Region | `eastus` |
+| OS disk type | `Standard_LRS` |
+| Password authentication | disabled |
+| Auto-shutdown | enabled, 0200 `GMT Standard Time` |
+| Inbound allow rules | 2: port 80 from 1 source(s); port 22 from 1 source(s) |
+
+#### Deployment policy (fail closed)
+
+| Check | Result | Detail |
+| --- | --- | --- |
+| VM size is the approved small size | PASS | `Standard_B2ats_v2` (expected `Standard_B2ats_v2`) |
+| Region known | PASS | `eastus` |
+| OS disk type known | PASS | `Standard_LRS` |
+| Password authentication disabled | PASS | disabled (SSH keys only) |
+| Daily auto-shutdown at the approved UK time | PASS | enabled at 0200 GMT Standard Time (expected 0200 GMT Standard Time) |
+| Inbound allow rules use single /32 sources only (no internet-wide SSH/HTTP) | PASS | all 2 inbound allow rule(s) use single IPv4 /32 sources |
+| Explicit inbound Internet deny | PASS | explicit inbound Internet deny present |
+| No temporary test rule in the deployed configuration | PASS | absent |
+| No implicit outbound access | PASS | subnet default outbound access disabled (egress via the NIC's public IP) |
+
+Policy checks: 9 passed.
+
+### Step: Store the reviewed plan privately (2026-11-14 11:02:52Z -> 11:02:56Z)
+
