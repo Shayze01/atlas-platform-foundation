@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Reproducible tests for scripts/verify-cleanup.sh, scripts/connectivity-check.sh and
-# scripts/azure-validate.sh.
+# scripts/azure-validate.sh, plus the Milestone 2 scripts (tests/scripts/m2-cases.sh).
 # Uses stub az / terraform / curl / ssh / timeout commands from tests/scripts/stubs,
 # placed first on PATH. Nothing contacts Azure or any network host.
 set -uo pipefail
@@ -71,6 +71,28 @@ count '^PASS: ' 8; lacks 'FAIL|INCONCLUSIVE'; has 'RESULT: PASS'; az_scoped; don
 
 run_case "cleanup: custom suffix stays scoped to its own resource group" 0 verify-cleanup.sh AZ_SCENARIO=clean -- atlas-foundation-test
 has 'rg-atlas-foundation-test'; has 'vm-atlas-foundation-test not found'; az_scoped rg-atlas-foundation-test; done_case
+
+run_case "cleanup KEEP_RESOURCE_GROUP=1: group kept and empty -> exit 0" 0 verify-cleanup.sh AZ_SCENARIO=kept-empty TF_STATE=empty KEEP_RESOURCE_GROUP=1
+has "PASS: rg-atlas-foundation-dev exists \(kept for the next deployment\) and contains no resources"
+has "RESULT: PASS.*the empty group is kept"
+az_scoped
+done_case
+
+run_case "cleanup KEEP_RESOURCE_GROUP=1: resources still in the kept group -> exit 1" 1 verify-cleanup.sh AZ_SCENARIO=kept-remaining TF_STATE=empty KEEP_RESOURCE_GROUP=1
+has "FAIL: rg-atlas-foundation-dev still contains 2 resource"
+done_case
+
+run_case "cleanup KEEP_RESOURCE_GROUP=1: missing persistent group is a failure -> exit 1" 1 verify-cleanup.sh AZ_SCENARIO=clean TF_STATE=empty KEEP_RESOURCE_GROUP=1
+has "FAIL: rg-atlas-foundation-dev does not exist, but it is persistent"
+done_case
+
+run_case "cleanup KEEP_RESOURCE_GROUP=1: resource count error is inconclusive, never PASS -> exit 2" 2 verify-cleanup.sh AZ_SCENARIO=kept-count-error TF_STATE=empty KEEP_RESOURCE_GROUP=1
+has "INCONCLUSIVE \(network error\): could not count resources"
+lacks "RESULT: PASS"
+done_case
+
+run_case "cleanup: invalid KEEP_RESOURCE_GROUP value -> exit 2" 2 verify-cleanup.sh AZ_SCENARIO=clean KEEP_RESOURCE_GROUP=yes
+done_case
 
 run_case "cleanup: remaining resource group, public IP and state -> exit 1" 1 verify-cleanup.sh AZ_SCENARIO=remaining TF_STATE=resources
 has 'FAIL: Terraform state still tracks'; has 'FAIL: rg-atlas-foundation-dev still exists'
@@ -265,6 +287,10 @@ has 'ERROR: CONNECT_TIMEOUT must be a whole number'; lacks '^PASS'; done_case
 
 run_case "azure-validate: unexpected extra argument -> exit 2" 2 azure-validate.sh EXPECTED_ADMIN_CIDR=198.51.100.20/32 -- blocked --force
 has "unexpected argument '--force'"; lacks '^PASS'; done_case
+
+# Milestone 2: bootstrap, teardown, GitHub setup and CI helper scripts.
+# shellcheck source=tests/scripts/m2-cases.sh
+source "${ROOT}/tests/scripts/m2-cases.sh"
 
 echo
 echo "Script tests: $((cases - case_failures)) passed, ${case_failures} failed (of ${cases})"

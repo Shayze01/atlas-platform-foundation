@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Stub Terraform for the Milestone 2 CI helper tests.
+#   PLAN_SCENARIO showfail | <name of tests/scripts/fixtures/plan-<name>.json>   ('terraform show -json')
+echo "terraform $*" >>"${STUB_LOG:?}"
+case "$*" in
+  init*) echo "Terraform has been successfully initialized!"; exit 0 ;;
+  "output -raw public_ip_address") printf '203.0.113.10'; exit 0 ;;
+  "show -json "*)
+    [[ "${PLAN_SCENARIO:-changes}" == showfail ]] && { echo "Error: plan file is corrupt" >&2; exit 1; }
+    cat "$(dirname "$0")/../fixtures/plan-${PLAN_SCENARIO:-changes}.json"; exit 0 ;;
+esac
+echo "stub terraform (m2): unhandled: $*" >&2
+exit 99

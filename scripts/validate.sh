@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Runs every offline check and prints a PASS / FAIL / SKIP summary.
-# Needs Terraform (>= 1.7). Docker, cloud-init and shellcheck are optional;
-# their checks are reported as SKIP if the tool is missing.
+# Needs Terraform (>= 1.7). Docker, cloud-init, shellcheck, actionlint and PyYAML are
+# optional locally; their checks are reported as SKIP if the tool is missing.
+# REQUIRE_ALL=1 (used in CI) turns every SKIP into a failure, so a missing tool
+# can never make the run look complete.
 # Does NOT contact or change Azure.
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
@@ -43,8 +45,21 @@ fi
 
 run_step "Script behaviour tests (stubbed az/terraform/curl/ssh, no network)" ./tests/scripts/run-script-tests.sh
 
+if python3 -c 'import yaml' >/dev/null 2>&1; then
+  run_step "Workflow security policy tests" python3 tests/workflows/test_workflow_policy.py
+else
+  skip_step "Workflow security policy tests" "PyYAML not installed"
+fi
+
+if command -v actionlint >/dev/null 2>&1; then
+  run_step "actionlint (GitHub Actions workflows)" actionlint
+else
+  skip_step "actionlint (GitHub Actions workflows)" "actionlint not installed"
+fi
+
 if command -v shellcheck >/dev/null 2>&1; then
-  run_step "shellcheck" shellcheck app/run-container.sh scripts/*.sh tests/scripts/*.sh tests/scripts/stubs/*
+  run_step "shellcheck" shellcheck app/run-container.sh scripts/*.sh scripts/ci/*.sh scripts/github/*.sh \
+    bootstrap/*.sh tests/scripts/*.sh tests/scripts/stubs/* tests/scripts/stubs-m2/*
 else
   skip_step "shellcheck" "shellcheck not installed"
 fi
@@ -62,5 +77,9 @@ pass_count=$(printf '%s\n' "${results[@]}" | grep -c '^PASS' || true)
 skip_count=$(printf '%s\n' "${results[@]}" | grep -c '^SKIP' || true)
 echo "Passed: ${pass_count}  Failed: ${failed}  Skipped: ${skip_count}"
 echo "Azure deployment checks are NOT part of this script (see README sections 7-9)."
+if [[ "${REQUIRE_ALL:-0}" == 1 ]] && (( skip_count > 0 )); then
+  echo "FAIL: REQUIRE_ALL=1 and ${skip_count} check(s) were skipped (missing tools above)."
+  failed=$((failed + skip_count))
+fi
 
 exit $(( failed > 0 ? 1 : 0 ))

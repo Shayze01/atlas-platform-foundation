@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# Stub Azure CLI for the Milestone 2 bootstrap/teardown/CI script tests. Never contacts Azure.
+#   STUB_TENANT / STUB_SUB      signed-in tenant / subscription (default: the test values)
+#   EXISTS_STATE / EXISTS_WORKLOAD  true|false|error  ('az group exists' for each group)
+#   STATE_RG_NAMES / WORKLOAD_NAMES  newline-separated resource names ('az resource list')
+#   WORKLOAD_COUNT              number printed for 'length(@)' queries
+#   IDENTITIES_EXIST            1 = 'az identity show' succeeds
+#   STATE_BLOB                  notfound|empty|resources|denied|braces|null|noresources|wrongtype|malformed|badmode|v3|emptyfile
+#   NSG_M2                      exists|notfound|error   ('az network nsg show')
+#   RULE_M2                     absent|present|error    ('az network nsg rule show')
+echo "az $*" >>"${STUB_LOG:?}"
+args="$*"
+file=""; prev=""
+for a in "$@"; do [[ "${prev}" == --file ]] && file="${a}"; prev="${a}"; done
+rg_of() { local p="" a; for a in "$@"; do [[ "${p}" == --name || "${p}" == --resource-group ]] && { echo "${a}"; return; }; p="${a}"; done; }
+
+case "${args}" in
+  "account show"*)
+    [[ "${AZ_ACCOUNT:-ok}" == fail ]] && { echo "ERROR: Please run 'az login' to setup account." >&2; exit 1; }
+    printf '%s\n%s\n' "${STUB_TENANT:-11111111-1111-1111-1111-111111111111}" "${STUB_SUB:-22222222-2222-2222-2222-222222222222}"; exit 0 ;;
+  "group exists"*)
+    rg="$(rg_of "$@")"
+    v="${EXISTS_WORKLOAD:-false}"; [[ "${rg}" == rg-atlas-tfstate ]] && v="${EXISTS_STATE:-false}"
+    [[ "${v}" == error ]] && { echo "ERROR: (AuthorizationFailed) does not have authorization" >&2; exit 1; }
+    echo "${v}"; exit 0 ;;
+  "resource list"*"length(@)"*) echo "${WORKLOAD_COUNT:-0}"; exit 0 ;;
+  "resource list"*)
+    rg="$(rg_of "$@")"
+    if [[ "${rg}" == rg-atlas-tfstate ]]; then printf '%s\n' "${STATE_RG_NAMES:-}"; else printf '%s\n' "${WORKLOAD_NAMES:-}"; fi
+    exit 0 ;;
+  "identity show"*)
+    [[ "${IDENTITIES_EXIST:-0}" == 1 ]] || { echo "ERROR: (ResourceNotFound) The Resource was not found." >&2; exit 3; }
+    if [[ "${args}" == *clientId* ]]; then echo 33333333-3333-3333-3333-333333333333; else echo 44444444-4444-4444-4444-444444444444; fi
+    exit 0 ;;
+  "role assignment list"*) exit 0 ;;
+  "storage blob download"*)
+    case "${STATE_BLOB:-notfound}" in
+      notfound) echo "ERROR: The specified blob does not exist. ErrorCode:BlobNotFound" >&2; exit 1 ;;
+      denied) echo "ERROR: You do not have the required permissions. ErrorCode:AuthorizationPermissionMismatch" >&2; exit 1 ;;
+      empty) echo '{"version":4,"resources":[]}' >"${file}" ;;
+      resources) echo '{"version":4,"resources":[{"mode":"managed","type":"azurerm_linux_virtual_machine"},{"mode":"data","type":"azurerm_resource_group"}]}' >"${file}" ;;
+      braces) echo '{}' >"${file}" ;;
+      null) echo 'null' >"${file}" ;;
+      noresources) echo '{"version":4,"terraform_version":"1.9.8"}' >"${file}" ;;
+      wrongtype) echo '{"version":4,"resources":{"mode":"managed"}}' >"${file}" ;;
+      malformed) echo '{"version":4,"resources":[' >"${file}" ;;
+      badmode) echo '{"version":4,"resources":[{"type":"azurerm_linux_virtual_machine"}]}' >"${file}" ;;
+      v3) echo '{"version":3,"resources":[]}' >"${file}" ;;
+      emptyfile) : >"${file}" ;;
+    esac
+    exit 0 ;;
+  "network nsg show"*)
+    case "${NSG_M2:-exists}" in
+      notfound) echo "ERROR: (ResourceNotFound) The Resource 'nsg' was not found." >&2; exit 3 ;;
+      error) echo "ERROR: (AuthorizationFailed) does not have authorization" >&2; exit 1 ;;
+    esac
+    exit 0 ;;
+  "network nsg rule show"*)
+    case "${RULE_M2:-absent}" in
+      absent) echo "ERROR: (NotFound) Security rule Allow-CI-Runner-Temporary not found." >&2; exit 3 ;;
+      error) echo "ERROR: HTTPSConnectionPool: Max retries exceeded" >&2; exit 1 ;;
+    esac
+    exit 0 ;;
+esac
+# Any other call (create/update/delete) succeeds silently; tests inspect STUB_LOG.
+exit 0

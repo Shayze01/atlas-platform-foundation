@@ -3,6 +3,7 @@
 # CURL_SCENARIO: ok | health-500 | health-badbody | root-badbody | timeout | timeout-curl8 |
 #                op-timeout | refused | unreachable | badopt
 # CURL_CONTROL:  ok | fail   (the https://api.ipify.org / ifconfig.me lookup)
+# CURL_IP1 / CURL_IP2: addresses returned by api.ipify.org / ifconfig.me (default 198.51.100.7)
 echo "curl $*" >>"${STUB_LOG:?}"
 out="" url=""
 while (( $# )); do
@@ -14,7 +15,8 @@ while (( $# )); do
 done
 if [[ "${url}" == *ifconfig.me* || "${url}" == *api.ipify.org* ]]; then
   [[ "${CURL_CONTROL:-ok}" == fail ]] && { echo "curl: (6) Could not resolve host: api.ipify.org" >&2; exit 6; }
-  printf '198.51.100.7'; exit 0
+  if [[ "${url}" == *ifconfig.me* ]]; then printf '%s' "${CURL_IP2:-${CURL_IP1:-198.51.100.7}}"; else printf '%s' "${CURL_IP1:-198.51.100.7}"; fi
+  exit 0
 fi
 scenario="${CURL_SCENARIO:-ok}"
 case "${scenario}" in

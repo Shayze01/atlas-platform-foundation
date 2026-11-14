@@ -284,3 +284,72 @@ classification and argument/tool checks (16 new script cases and one changed
 case: NSG read error is now exit 2 INCONCLUSIVE instead of exit 1), and test
 fixtures using only RFC 5737 documentation addresses.
 
+## 6. Milestone 2 offline checks (executed 2026-11-14, feature branch)
+
+New run on the Milestone 2 branch, separate from every result above. **No Azure or
+GitHub resources were created or changed**; the bootstrap, GitHub setup and workflows
+have not run for real yet. Raw output:
+[`evidence/offline-validate-2026-11-14-m2.log`](evidence/offline-validate-2026-11-14-m2.log).
+
+Command: `REQUIRE_ALL=1 ./scripts/validate.sh` (a skipped check would fail the run).
+Environment: Ubuntu 22.04.5 LTS, Terraform v1.9.8, azurerm 5.13.0, Docker 29.9.2,
+cloud-init 26.1, ShellCheck 0.11.0, actionlint 1.7.12, PyYAML 5.4.1.
+
+### Summary: 12 passed, 0 failed, 0 skipped (exit 0)
+
+| # | Check | Result | Detail |
+| --- | --- | --- | --- |
+| 1 | `terraform fmt -check -recursive` | PASS | |
+| 2 | `terraform init -backend=false` | PASS | |
+| 3 | `terraform validate` | PASS | |
+| 4 | `terraform test` (mocked provider) | PASS | 17 passed, 0 failed (2 new: resource group created by default / existing group used when `create_resource_group = false`). |
+| 5 | Render cloud-init | PASS | |
+| 6 | Embedded app files unchanged | PASS | |
+| 7 | `cloud-init schema` | PASS | |
+| 8 | Script behaviour tests | PASS | 110 passed, 0 failed: 18 `verify-cleanup.sh` (5 new), 16 `connectivity-check.sh`, 31 `azure-validate.sh`, 10 `bootstrap.sh`, 6 `teardown.sh`, 5 `setup-github.sh`, 24 `scripts/ci/*`. |
+| 9 | Workflow security policy tests | PASS | `ci.yml`, `deploy.yml`, `destroy.yml` pass; 4 cross-workflow rules pass; both bad fixtures rejected. |
+| 10 | `actionlint` | PASS | No findings. |
+| 11 | `shellcheck` | PASS | No findings (now includes `bootstrap/`, `scripts/ci/`, `scripts/github/`, `stubs-m2/`). |
+| 12 | Local web service test (Docker) | PASS | 9/9 checks. |
+
+Not yet verified (requires the owner-run setup and an approved live window): OIDC
+login with the customised subject, Reader being sufficient for `terraform plan`, Run
+Command and NSG changes with the RG-scoped Contributor role, storage lifecycle and
+lock behaviour, the GitHub environment approval flow, and the first `ci.yml` run on
+GitHub.
+
+## 7. Milestone 2 offline checks after review fixes (executed 2026-11-14)
+
+Second offline run on the PR branch after three requested fixes. No Azure or GitHub
+resources were created or changed. Section 6 stays as the earlier record. Raw output:
+[`evidence/offline-validate-2026-11-14-m2-r2.log`](evidence/offline-validate-2026-11-14-m2-r2.log).
+
+Fixes covered:
+1. `defaults.run.shell: bash` in all workflows (GitHub then runs `bash -eo pipefail`).
+   The policy test runs every piped step with each command failing in turn: deploy.yml
+   16/16 and destroy.yml 4/4 injected failures fail the step (backend init, apply,
+   public/in-VM/blocked validation, temporary-rule removal, destroy, cleanup
+   verification). Control: under GitHub's default `bash -e`, 14/16 would have been masked.
+2. `bootstrap/teardown.sh` validates the state blob as a Terraform v4 state before
+   counting; `{}`, `null`, empty file, malformed JSON, missing or wrong-type
+   `resources`, entries without a valid `mode`, version 3, and an unexpected
+   `az group exists` answer are each inconclusive (exit 2) with no deletions. The empty-file
+   case found a real gap (jq returned success on empty input), now fixed with `--slurp`.
+3. The plan summary adds allowlisted details and 9 fail-closed policy checks
+   (`scripts/ci/plan_policy.py`); 13 non-compliant or unevaluable plan fixtures each
+   exit 1 with no plan outputs written.
+
+### Summary: 12 passed, 0 failed, 0 skipped (`REQUIRE_ALL=1`, exit 0)
+
+| Check | Result |
+| --- | --- |
+| `terraform fmt`, `init -backend=false`, `validate` | PASS |
+| `terraform test` | PASS - 17/17 |
+| cloud-init render, embedded files, schema | PASS |
+| Script behaviour tests | PASS - 134/134 (24 new: 9 teardown state-validation, 15 plan policy/details) |
+| Workflow security policy tests | PASS - incl. pipefail injection and control |
+| actionlint, ShellCheck | PASS |
+| Local web service test (Docker) | PASS - 9/9 |
+
+Still not verified live: everything listed at the end of section 6.
+

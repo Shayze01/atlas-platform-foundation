@@ -1,6 +1,6 @@
 output "resource_group_name" {
   description = "Name of the resource group containing every resource in this project."
-  value       = azurerm_resource_group.this.name
+  value       = local.resource_group_name
 }
 
 output "vm_name" {

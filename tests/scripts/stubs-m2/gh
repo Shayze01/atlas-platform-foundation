@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Stub GitHub CLI for scripts/github/setup-github.sh tests. Never contacts GitHub.
+#   GH_ADMIN true|false    repository admin permission of the signed-in user
+# Request bodies on stdin are logged for 'api ... --input -'; secret values are NOT
+# logged (only their length), so tests can prove the script never echoes them.
+args="$*"
+case "${args}" in
+  "api repos/"*"--jq .permissions.admin") echo "${GH_ADMIN:-true}"; exit 0 ;;
+  "api users/"*"--jq .id") echo 12345; exit 0 ;;
+  *"deployment-branch-policies --jq"*) echo ""; exit 0 ;;
+esac
+echo "gh ${args}" >>"${STUB_LOG:?}"
+if [[ "${args}" == *"--input -"* ]]; then echo "  body: $(cat)" >>"${STUB_LOG}"; fi
+if [[ "${args}" == "secret set"* ]]; then v="$(cat)"; echo "  secret: ${#v} bytes on stdin" >>"${STUB_LOG}"; fi
+exit 0

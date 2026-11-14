@@ -40,7 +40,7 @@ case "${args}" in
   "group exists"*)
     case "${scenario}" in
       clean|partial-network) echo false ;;
-      remaining) echo true ;;
+      remaining|kept-empty|kept-remaining|kept-count-error) echo true ;;
       auth-expired) expired_err ;;
       permission) perm_err ;;
       network) net_err ;;
@@ -48,12 +48,21 @@ case "${args}" in
       garbage) echo "maybe" ;;
     esac
     exit 0 ;;
+  "resource list"*"length(@)"*)
+    case "${scenario}" in
+      kept-empty) echo 0 ;;
+      kept-remaining) echo 2 ;;
+      kept-count-error) net_err ;;
+      *) echo 1 ;;
+    esac
+    exit 0 ;;
   "resource list"*)
     printf 'Name                      Type\n------------------------  ---------------------------------\npip-atlas-foundation-dev  Microsoft.Network/publicIPAddresses\n'
     exit 0 ;;
   "resource show"*)
     case "${scenario}" in
-      clean|garbage) not_found_rg ;;
+      clean|garbage|kept-empty) not_found_rg ;;
+      kept-remaining|kept-count-error) not_found_res "${args##* }" ;;
       remaining)
         if [[ "${args}" == *pip-atlas-foundation-dev* ]]; then echo '{"name":"pip-atlas-foundation-dev"}'; exit 0; fi
         not_found_res "${args##* }" ;;
