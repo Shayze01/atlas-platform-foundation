@@ -99,6 +99,16 @@ run_case "teardown: state unreadable (permission) is inconclusive -> exit 2, not
   PATH="${M2PATH}" EXISTS_STATE=true STATE_BLOB=denied -- "${TD[@]}" --apply
 has "INCONCLUSIVE: could not read the Terraform state"; no_writes; done_case
 
+for blob in braces null noresources wrongtype malformed badmode v3 emptyfile; do
+  run_case "teardown: unsupported state blob '${blob}' is inconclusive -> exit 2, nothing deleted" 2 ../bootstrap/teardown.sh \
+    PATH="${M2PATH}" EXISTS_STATE=true STATE_BLOB="${blob}" IDENTITIES_EXIST=1 -- "${TD[@]}" --apply
+  has "INCONCLUSIVE: the state blob is not a supported Terraform state"; lacks "OK: Terraform state tracks no managed"; no_writes; done_case
+done
+
+run_case "teardown: unexpected state-group existence answer is inconclusive -> exit 2, nothing deleted" 2 ../bootstrap/teardown.sh \
+  PATH="${M2PATH}" EXISTS_STATE=maybe IDENTITIES_EXIST=1 -- "${TD[@]}" --apply
+has "INCONCLUSIVE: unexpected 'az group exists' output for rg-atlas-tfstate"; no_writes; done_case
+
 run_case "teardown: wrong subscription -> exit 1" 1 ../bootstrap/teardown.sh PATH="${M2PATH}" STUB_SUB=99999999-9999-9999-9999-999999999999 -- "${TD[@]}" --apply
 has "SAFETY"; no_writes; done_case
 
@@ -175,6 +185,45 @@ done_case
 run_case "plan-summary: reads and no-ops only -> has_changes=false" 0 ci/plan-summary.sh \
   PATH="${M2PATH}" PLAN_SCENARIO=nochanges GITHUB_OUTPUT="${WORK}/gh_output2" -- "${PLANF}"
 has "No changes."; grep -qx "has_changes=false" "${WORK}/gh_output2" || note "has_changes=false missing"; done_case
+
+has_details() {
+  has "\\| VM size \\| \`Standard_B2ats_v2\` \\|"; has "\\| Region \\| \`eastus\` \\|"; has "\\| OS disk type \\| \`Standard_LRS\` \\|"
+  has "\\| Password authentication \\| disabled \\|"; has "\\| Auto-shutdown \\| enabled, 0200 \`GMT Standard Time\` \\|"
+  has "\\| Inbound allow rules \\| 2: port 22 from 1 source\\(s\\); port 80 from 1 source\\(s\\) \\|"
+}
+run_case "plan-summary: allowlisted details + 9 policy checks pass, no private values" 0 ci/plan-summary.sh \
+  PATH="${M2PATH}" GITHUB_OUTPUT="${WORK}/gh_output3" -- "${PLANF}"
+has_details; has "Policy checks: 9 passed"; count "\\| PASS \\|" 9
+lacks "203\\.0\\.113"; lacks "52\\.142"; lacks "AAAAC3Nz"; lacks "atlasadmin"; lacks "I2Nsb3Vk"
+grep -qx "has_changes=true" "${WORK}/gh_output3" || note "outputs not written for a compliant plan"
+done_case
+
+run_case "plan-summary: no-change plan still evaluated against planned values" 0 ci/plan-summary.sh \
+  PATH="${M2PATH}" PLAN_SCENARIO=nochanges -- "${PLANF}"
+has "No changes."; has "Policy checks: 9 passed"; done_case
+
+while IFS='|' read -r scen expect; do
+  rm -f "${WORK}/gh_output_p"
+  run_case "plan-summary policy: '${scen}' fails closed -> exit 1, no outputs, not offered for approval" 1 ci/plan-summary.sh \
+    PATH="${M2PATH}" PLAN_SCENARIO="${scen}" GITHUB_OUTPUT="${WORK}/gh_output_p" -- "${PLANF}"
+  has "POLICY FAILED"; has "${expect}"; lacks "203\\.0\\.113"; lacks "192\\.0\\.2\\.44"; lacks "Policy checks: 9 passed"
+  [[ ! -s "${WORK}/gh_output_p" ]] || note "plan outputs written despite policy failure"
+  done_case
+done <<'CASES'
+open-ssh|\| Inbound allow rules use single /32 sources only.*\| FAIL \| 1 source\(s\) are internet-wide
+internet-http|\| Inbound allow rules use single /32 sources only.*\| FAIL \|
+wide-range|wider than a single IPv4 /32
+temp-rule|\| No temporary test rule in the deployed configuration \| FAIL \|
+no-deny|\| Explicit inbound Internet deny \| FAIL \|
+password-enabled|\| Password authentication disabled \| FAIL \|
+wrong-size|\| VM size is the approved small size \| FAIL \| `Standard_D4s_v5`
+unknown-size|\| VM size is the approved small size \| UNEVALUABLE \|
+unknown-source|\| UNEVALUABLE \| value `source of rule Allow-SSH-From-Admin`
+no-shutdown|\| Daily auto-shutdown at the approved UK time \| FAIL \|
+wrong-shutdown|enabled at 2300 GMT Standard Time
+implicit-outbound|\| No implicit outbound access \| FAIL \|
+no-planned-values|\| planned_values present \| UNEVALUABLE \|
+CASES
 
 run_case "plan-summary: unreadable plan -> exit 2" 2 ci/plan-summary.sh PATH="${M2PATH}" PLAN_SCENARIO=showfail -- "${PLANF}"
 has "terraform show -json' failed"; done_case

@@ -14,7 +14,10 @@ Also runs the checker against deliberately bad fixtures to prove it rejects them
 import glob
 import os
 import re
+import shutil
+import subprocess
 import sys
+import tempfile
 
 import yaml
 
@@ -50,6 +53,8 @@ def check(path):
 
     if "permissions" not in doc:
         v.append(f"{name}: no top-level permissions block")
+    if ((doc.get("defaults") or {}).get("run") or {}).get("shell") != "bash":
+        v.append(f"{name}: defaults.run.shell must be bash (GitHub then adds -o pipefail)")
     for bad in ("pull_request_target", "workflow_run"):
         if bad in triggers:
             v.append(f"{name}: forbidden trigger {bad}")
@@ -99,6 +104,57 @@ def check(path):
     return v
 
 
+# Commands a pipeline step may run; each is stubbed to fail on demand.
+CMD = re.compile(r"(?:\./scripts/(?:ci/)?)?([\w-]+\.sh)\b|\b(terraform|az)\b")
+STUBBED_SCRIPTS = ["ci/backend-init.sh", "ci/temp-access.sh", "ci/plan-summary.sh", "ci/runner-ip.sh",
+                   "ci/wait-for-health.sh", "azure-validate.sh", "verify-cleanup.sh"]
+STUB = '#!/usr/bin/env bash\nn="$(basename "$0")"\n[[ "$n" == "${FAIL_CMD:-}" ]] && { echo "boom from $n"; exit 3; }\necho "ok from $n"\n'
+
+
+def github_shell(doc):
+    """The shell GitHub uses for a run step: explicit bash adds pipefail; the default does not."""
+    shell = ((doc.get("defaults") or {}).get("run") or {}).get("shell")
+    return ["bash", "--noprofile", "--norc", "-eo", "pipefail"] if shell == "bash" else ["bash", "-e"]
+
+
+def pipeline_steps(doc):
+    for job_id, job in (doc.get("jobs") or {}).items():
+        for step in job.get("steps") or []:
+            run = step.get("run") or ""
+            if re.search(r"(?<!\|)\|(?!\|)", run) and "${{" not in run:
+                yield job_id, step.get("name", "?"), run
+
+
+def pipefail_failures(doc, shell):
+    """Run each piped step with every command in it failing in turn.
+    Returns (masked, checked): failures that still exited 0, and total runs."""
+    masked, checked = [], 0
+    with tempfile.TemporaryDirectory() as tmp:
+        os.makedirs(os.path.join(tmp, "scripts", "ci"))
+        os.makedirs(os.path.join(tmp, "bin"))
+        shutil.copy(os.path.join(ROOT, "scripts", "ci", "sanitize.sh"), os.path.join(tmp, "scripts", "ci"))
+        for rel in STUBBED_SCRIPTS + ["../bin/terraform", "../bin/az"]:
+            path = os.path.normpath(os.path.join(tmp, "scripts", rel))
+            with open(path, "w") as f:
+                f.write(STUB)
+            os.chmod(path, 0o755)
+        env = dict(os.environ, PATH=os.path.join(tmp, "bin") + os.pathsep + os.environ["PATH"],
+                   RUNNER_TEMP=tmp, GITHUB_STEP_SUMMARY=os.path.join(tmp, "summary"),
+                   GITHUB_OUTPUT=os.path.join(tmp, "out"), GITHUB_ENV=os.path.join(tmp, "env"))
+        for job_id, name, run in pipeline_steps(doc):
+            script = os.path.join(tmp, "step.sh")
+            with open(script, "w") as f:
+                f.write(run)
+            names = sorted({m.group(1) or m.group(2) for m in CMD.finditer(run)} - {"sanitize.sh"})
+            for cmd in names:
+                checked += 1
+                rc = subprocess.run(shell + [script], cwd=tmp, env=dict(env, FAIL_CMD=cmd),
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode
+                if rc == 0:
+                    masked.append(f"{job_id} / {name}: failing '{cmd}' still exited 0")
+    return masked, checked
+
+
 def main():
     failures = 0
     workflows = sorted(glob.glob(os.path.join(ROOT, ".github", "workflows", "*.yml")))
@@ -146,9 +202,37 @@ def main():
         print(("PASS" if ok else "FAIL") + ": failure-cleanup runs when apply/validation fails or is cancelled")
         failures += 0 if ok else 1
 
+    # Pipeline failures must fail the step (and therefore trigger cleanup).
+    for wf_name in ("deploy.yml", "destroy.yml", "ci.yml"):
+        doc = docs.get(wf_name)
+        if not doc:
+            continue
+        masked, checked = pipefail_failures(doc, github_shell(doc))
+        if masked or (wf_name != "ci.yml" and checked == 0):
+            print(f"FAIL: {wf_name}: a failing command is hidden by a later pipeline stage:")
+            for m in masked or ["no piped steps found to test"]:
+                print(f"    - {m}")
+            failures += 1
+        else:
+            print(f"PASS: {wf_name}: every one of {checked} injected command failures in piped steps fails the step")
+    # Control: GitHub's default shell (bash -e, no pipefail) WOULD hide them, so the test is sensitive.
+    masked, checked = pipefail_failures(deploy or {}, ["bash", "-e"])
+    if masked:
+        print(f"PASS: control - without pipefail {len(masked)} of {checked} injected failures in deploy.yml would be masked")
+    else:
+        print("FAIL: control - the pipefail test did not detect masking without pipefail"); failures += 1
+    # Cleanup steps must run even after an earlier step failed.
+    for wf_name, job_id in (("deploy.yml", "failure-cleanup"), ("destroy.yml", "destroy")):
+        steps = (docs.get(wf_name) or {}).get("jobs", {}).get(job_id, {}).get("steps") or []
+        late = [st for st in steps if re.search(r"terraform destroy|verify-cleanup\.sh", st.get("run") or "")]
+        ok = len(late) == 2 and all(st.get("if") == "always()" for st in late)
+        print(("PASS" if ok else "FAIL") + f": {wf_name}:{job_id} destroy and cleanup verification run with if: always()")
+        failures += 0 if ok else 1
+
     # The checker must reject known-bad workflows.
     expected = {
-        "bad-pr-azure.yml": ["pull-request workflow references secrets", "pull-request job has id-token", "action not pinned"],
+        "bad-pr-azure.yml": ["pull-request workflow references secrets", "pull-request job has id-token", "action not pinned",
+                             "defaults.run.shell must be bash"],
         "bad-unsafe-deploy.yml": ["forbidden trigger pull_request_target", "Azure job without a main-branch guard",
                                   "Azure job without an environment", "terraform apply must apply the saved",
                                   "artifacts are not allowed", "checkout must set persist-credentials", "not piped through"],

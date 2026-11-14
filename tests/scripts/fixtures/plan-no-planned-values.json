@@ -1,0 +1,64 @@
+{
+ "resource_changes": [
+  {
+   "address": "module.networking.azurerm_network_security_rule.allow_ssh_from_admin",
+   "change": {
+    "actions": [
+     "create"
+    ],
+    "after": {
+     "source_address_prefix": "203.0.113.77/32"
+    }
+   }
+  },
+  {
+   "address": "module.compute.azurerm_linux_virtual_machine.this",
+   "change": {
+    "actions": [
+     "create"
+    ],
+    "after": {
+     "custom_data": "I2Nsb3VkLWNvbmZpZw==",
+     "admin_ssh_key": [
+      {
+       "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKAhnnlI7ScyqxeIK1AysQ0aqybx6fYKZbROGFSh78TQ"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "address": "module.compute.azurerm_public_ip.vm",
+   "change": {
+    "actions": [
+     "delete",
+     "create"
+    ]
+   }
+  },
+  {
+   "address": "module.networking.azurerm_subnet.workload",
+   "change": {
+    "actions": [
+     "update"
+    ]
+   }
+  },
+  {
+   "address": "module.networking.azurerm_network_security_rule.test_temporary[0]",
+   "change": {
+    "actions": [
+     "delete"
+    ]
+   }
+  },
+  {
+   "address": "data.azurerm_resource_group.existing[0]",
+   "change": {
+    "actions": [
+     "read"
+    ]
+   }
+  }
+ ]
+}

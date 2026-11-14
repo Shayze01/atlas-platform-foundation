@@ -12,6 +12,12 @@ on:
   schedule:
     - cron: "30 3 * * *" # 03:30 UTC daily, after the 02:00 UK auto-shutdown
 
+# Explicit bash = "bash --noprofile --norc -eo pipefail": a failing command is not
+# hidden by a succeeding "| sanitize.sh" or "| tee" later in the pipeline.
+defaults:
+  run:
+    shell: bash
+
 permissions: {}
 
 # Shared with deploy.yml: deployment and destruction never overlap.

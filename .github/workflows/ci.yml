@@ -8,6 +8,12 @@ on:
   push:
     branches: [main]
 
+# Explicit bash = "bash --noprofile --norc -eo pipefail": a failing command is not
+# hidden by a succeeding "| sanitize.sh" or "| tee" later in the pipeline.
+defaults:
+  run:
+    shell: bash
+
 permissions:
   contents: read
 

@@ -5,7 +5,7 @@
 #   STATE_RG_NAMES / WORKLOAD_NAMES  newline-separated resource names ('az resource list')
 #   WORKLOAD_COUNT              number printed for 'length(@)' queries
 #   IDENTITIES_EXIST            1 = 'az identity show' succeeds
-#   STATE_BLOB                  notfound|empty|resources|denied   ('az storage blob download')
+#   STATE_BLOB                  notfound|empty|resources|denied|braces|null|noresources|wrongtype|malformed|badmode|v3|emptyfile
 #   NSG_M2                      exists|notfound|error   ('az network nsg show')
 #   RULE_M2                     absent|present|error    ('az network nsg rule show')
 echo "az $*" >>"${STUB_LOG:?}"
@@ -39,6 +39,14 @@ case "${args}" in
       denied) echo "ERROR: You do not have the required permissions. ErrorCode:AuthorizationPermissionMismatch" >&2; exit 1 ;;
       empty) echo '{"version":4,"resources":[]}' >"${file}" ;;
       resources) echo '{"version":4,"resources":[{"mode":"managed","type":"azurerm_linux_virtual_machine"},{"mode":"data","type":"azurerm_resource_group"}]}' >"${file}" ;;
+      braces) echo '{}' >"${file}" ;;
+      null) echo 'null' >"${file}" ;;
+      noresources) echo '{"version":4,"terraform_version":"1.9.8"}' >"${file}" ;;
+      wrongtype) echo '{"version":4,"resources":{"mode":"managed"}}' >"${file}" ;;
+      malformed) echo '{"version":4,"resources":[' >"${file}" ;;
+      badmode) echo '{"version":4,"resources":[{"type":"azurerm_linux_virtual_machine"}]}' >"${file}" ;;
+      v3) echo '{"version":3,"resources":[]}' >"${file}" ;;
+      emptyfile) : >"${file}" ;;
     esac
     exit 0 ;;
   "network nsg show"*)

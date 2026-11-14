@@ -93,7 +93,20 @@ Raw plans, state, tfvars, credentials and personal IPs are not published:
 
 - No workflow uploads artifacts (enforced by the policy test).
 - `terraform plan` output goes to a runner-local file; the run summary shows only
-  resource addresses, actions, counts and the plan SHA-256 (`scripts/ci/plan-summary.sh`).
+  resource addresses, actions, counts, the plan SHA-256 and **allowlisted** deployment
+  details: VM size, region, OS disk type, password-authentication status, auto-shutdown
+  settings and the number of sources per inbound allow rule (never the addresses)
+  (`scripts/ci/plan-summary.sh` + `scripts/ci/plan_policy.py`).
+- **Fail-closed policy checks** on the planned end state: approved VM size, password
+  authentication disabled, daily auto-shutdown at 0200 `GMT Standard Time`, every
+  inbound allow rule limited to single IPv4 /32 sources (no `*`, `Internet`,
+  `0.0.0.0/0` or ranges), explicit Internet deny, no temporary test rule, no implicit
+  outbound access. A failed or unevaluable check (missing/unknown value) fails the plan
+  job, so no plan is stored and nothing is offered for approval.
+- Every workflow sets `defaults.run.shell: bash`, which GitHub runs as
+  `bash -eo pipefail`: a failing command can never be hidden by a later
+  `| sanitize.sh` or `| tee`, so failures still fail the job and trigger cleanup
+  (the policy test injects a failure into every piped command to prove it).
 - Admin IP, SSH public key and owner tag are **environment secrets**, so GitHub masks
   them. The runner's own IP is masked with `::add-mask::` before use.
 - Every Terraform/validation step pipes through `scripts/ci/sanitize.sh`, which masks
@@ -170,7 +183,7 @@ approve the `azure-deploy` review, and watch validation and teardown.
 | How | `destroy.yml` (manual/nightly), Deploy's `destroy` option, failure-cleanup | `bootstrap/teardown.sh --apply` (you) |
 | Removes | VM, disk, NIC, public IP, NSG + rules, subnet, VNet, schedule | Empty workload group (and its role assignments), identities (and federated credentials), state-container role assignments, delete lock, then `rg-atlas-tfstate` **last** |
 | Keeps | Workload group, role assignments, identities, state backend | Nothing (remove the GitHub environments/variables manually if wanted) |
-| Safety | `verify-cleanup.sh` (`KEEP_RESOURCE_GROUP=1`) must find the group present and empty | Refuses (exit 1) while the workload group has any resource or the state tracks any managed resource; any read error stops it (exit 2) |
+| Safety | `verify-cleanup.sh` (`KEEP_RESOURCE_GROUP=1`) must find the group present and empty | Refuses (exit 1) while the workload group has any resource or the state tracks any managed resource. Any read error, unexpected `az group exists` answer, or state that is not a supported Terraform v4 state (`{}`, `null`, empty, malformed, missing/wrong-type `resources`) stops it as inconclusive (exit 2) before anything is deleted |
 
 ## 7. Recovery
 

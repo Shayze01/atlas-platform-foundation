@@ -16,6 +16,12 @@ on:
         options: [destroy, keep-running]
         default: destroy
 
+# Explicit bash = "bash --noprofile --norc -eo pipefail": a failing command is not
+# hidden by a succeeding "| sanitize.sh" or "| tee" later in the pipeline.
+defaults:
+  run:
+    shell: bash
+
 permissions: {}
 
 # Shared with destroy.yml: deployment and destruction never overlap.

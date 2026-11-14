@@ -318,3 +318,38 @@ Command and NSG changes with the RG-scoped Contributor role, storage lifecycle a
 lock behaviour, the GitHub environment approval flow, and the first `ci.yml` run on
 GitHub.
 
+## 7. Milestone 2 offline checks after review fixes (executed 2026-11-14)
+
+Second offline run on the PR branch after three requested fixes. No Azure or GitHub
+resources were created or changed. Section 6 stays as the earlier record. Raw output:
+[`evidence/offline-validate-2026-11-14-m2-r2.log`](evidence/offline-validate-2026-11-14-m2-r2.log).
+
+Fixes covered:
+1. `defaults.run.shell: bash` in all workflows (GitHub then runs `bash -eo pipefail`).
+   The policy test runs every piped step with each command failing in turn: deploy.yml
+   16/16 and destroy.yml 4/4 injected failures fail the step (backend init, apply,
+   public/in-VM/blocked validation, temporary-rule removal, destroy, cleanup
+   verification). Control: under GitHub's default `bash -e`, 14/16 would have been masked.
+2. `bootstrap/teardown.sh` validates the state blob as a Terraform v4 state before
+   counting; `{}`, `null`, empty file, malformed JSON, missing or wrong-type
+   `resources`, entries without a valid `mode`, version 3, and an unexpected
+   `az group exists` answer are each inconclusive (exit 2) with no deletions. The empty-file
+   case found a real gap (jq returned success on empty input), now fixed with `--slurp`.
+3. The plan summary adds allowlisted details and 9 fail-closed policy checks
+   (`scripts/ci/plan_policy.py`); 13 non-compliant or unevaluable plan fixtures each
+   exit 1 with no plan outputs written.
+
+### Summary: 12 passed, 0 failed, 0 skipped (`REQUIRE_ALL=1`, exit 0)
+
+| Check | Result |
+| --- | --- |
+| `terraform fmt`, `init -backend=false`, `validate` | PASS |
+| `terraform test` | PASS - 17/17 |
+| cloud-init render, embedded files, schema | PASS |
+| Script behaviour tests | PASS - 134/134 (24 new: 9 teardown state-validation, 15 plan policy/details) |
+| Workflow security policy tests | PASS - incl. pipefail injection and control |
+| actionlint, ShellCheck | PASS |
+| Local web service test (Docker) | PASS - 9/9 |
+
+Still not verified live: everything listed at the end of section 6.
+

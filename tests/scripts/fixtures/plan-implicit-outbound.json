@@ -1,0 +1,185 @@
+{
+ "format_version": "1.2",
+ "variables": {
+  "admin_source_ip_cidr": {
+   "value": "203.0.113.77/32"
+  },
+  "admin_ssh_public_key": {
+   "value": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKAhnnlI7ScyqxeIK1AysQ0aqybx6fYKZbROGFSh78TQ atlas-test-only"
+  }
+ },
+ "resource_changes": [
+  {
+   "address": "module.networking.azurerm_network_security_rule.allow_ssh_from_admin",
+   "change": {
+    "actions": [
+     "create"
+    ],
+    "after": {
+     "source_address_prefix": "203.0.113.77/32"
+    }
+   }
+  },
+  {
+   "address": "module.compute.azurerm_linux_virtual_machine.this",
+   "change": {
+    "actions": [
+     "create"
+    ],
+    "after": {
+     "custom_data": "I2Nsb3VkLWNvbmZpZw==",
+     "admin_ssh_key": [
+      {
+       "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKAhnnlI7ScyqxeIK1AysQ0aqybx6fYKZbROGFSh78TQ"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "address": "module.compute.azurerm_public_ip.vm",
+   "change": {
+    "actions": [
+     "delete",
+     "create"
+    ]
+   }
+  },
+  {
+   "address": "module.networking.azurerm_subnet.workload",
+   "change": {
+    "actions": [
+     "update"
+    ]
+   }
+  },
+  {
+   "address": "module.networking.azurerm_network_security_rule.test_temporary[0]",
+   "change": {
+    "actions": [
+     "delete"
+    ]
+   }
+  },
+  {
+   "address": "data.azurerm_resource_group.existing[0]",
+   "change": {
+    "actions": [
+     "read"
+    ]
+   }
+  }
+ ],
+ "planned_values": {
+  "root_module": {
+   "resources": [
+    {
+     "address": "data.azurerm_resource_group.existing[0]",
+     "mode": "data",
+     "type": "azurerm_resource_group",
+     "values": {
+      "name": "rg-atlas-foundation-dev"
+     }
+    }
+   ],
+   "child_modules": [
+    {
+     "address": "module.networking",
+     "resources": [
+      {
+       "address": "module.networking.azurerm_subnet.workload",
+       "type": "azurerm_subnet",
+       "values": {
+        "default_outbound_access_enabled": true,
+        "address_prefixes": [
+         "10.20.1.0/24"
+        ]
+       }
+      },
+      {
+       "address": "module.networking.azurerm_network_security_rule.Allow-SSH-From-Admin",
+       "type": "azurerm_network_security_rule",
+       "values": {
+        "name": "Allow-SSH-From-Admin",
+        "access": "Allow",
+        "direction": "Inbound",
+        "protocol": "Tcp",
+        "priority": 100,
+        "source_address_prefix": "203.0.113.77/32",
+        "destination_port_range": "22"
+       }
+      },
+      {
+       "address": "module.networking.azurerm_network_security_rule.Allow-HTTP-From-Admin",
+       "type": "azurerm_network_security_rule",
+       "values": {
+        "name": "Allow-HTTP-From-Admin",
+        "access": "Allow",
+        "direction": "Inbound",
+        "protocol": "Tcp",
+        "priority": 100,
+        "source_address_prefix": "203.0.113.77/32",
+        "destination_port_range": "80"
+       }
+      },
+      {
+       "address": "module.networking.azurerm_network_security_rule.deny",
+       "type": "azurerm_network_security_rule",
+       "values": {
+        "name": "Deny-Internet-Inbound",
+        "access": "Deny",
+        "direction": "Inbound",
+        "source_address_prefix": "Internet",
+        "destination_port_range": "*"
+       }
+      }
+     ]
+    },
+    {
+     "address": "module.compute",
+     "resources": [
+      {
+       "address": "module.compute.azurerm_linux_virtual_machine.this",
+       "type": "azurerm_linux_virtual_machine",
+       "values": {
+        "size": "Standard_B2ats_v2",
+        "location": "eastus",
+        "disable_password_authentication": true,
+        "admin_username": "atlasadmin",
+        "admin_ssh_key": [
+         {
+          "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKAhnnlI7ScyqxeIK1AysQ0aqybx6fYKZbROGFSh78TQ",
+          "username": "atlasadmin"
+         }
+        ],
+        "os_disk": [
+         {
+          "storage_account_type": "Standard_LRS",
+          "caching": "ReadWrite"
+         }
+        ]
+       }
+      },
+      {
+       "address": "module.compute.azurerm_dev_test_global_vm_shutdown_schedule.this[0]",
+       "type": "azurerm_dev_test_global_vm_shutdown_schedule",
+       "values": {
+        "enabled": true,
+        "daily_recurrence_time": "0200",
+        "timezone": "GMT Standard Time"
+       }
+      },
+      {
+       "address": "module.compute.azurerm_public_ip.vm",
+       "type": "azurerm_public_ip",
+       "values": {
+        "sku": "Standard",
+        "ip_address": "52.142.2.255"
+       }
+      }
+     ]
+    }
+   ]
+  }
+ }
+}

@@ -42,6 +42,7 @@ done
 GUID='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
 [[ "${TENANT}" =~ ${GUID} && "${SUBSCRIPTION}" =~ ${GUID} ]] || { echo "ERROR: --tenant and --subscription must be lowercase GUIDs"; exit 2; }
 command -v az >/dev/null 2>&1 || { echo "ERROR: Azure CLI (az) not found"; exit 2; }
+command -v jq >/dev/null 2>&1 || { echo "ERROR: jq not found (needed to validate the Terraform state)"; exit 2; }
 
 SA="statlas$(printf '%s' "${SUBSCRIPTION}" | sha256sum | cut -c1-11)"
 CONTAINER_SCOPE="/subscriptions/${SUBSCRIPTION}/resourceGroups/${STATE_RG}/providers/Microsoft.Storage/storageAccounts/${SA}/blobServices/default/containers/${CONTAINER}"
@@ -80,18 +81,30 @@ case "${wl_exists}" in
   *) echo "INCONCLUSIVE: unexpected 'az group exists' output '${wl_exists}'"; exit 2 ;;
 esac
 st_exists="$(az group exists --name "${STATE_RG}" 2>"${ERR}")" || { echo "INCONCLUSIVE: cannot check ${STATE_RG}:"; show_err; exit 2; }
+case "${st_exists}" in
+  true|false) ;;
+  *) echo "INCONCLUSIVE: unexpected 'az group exists' output for ${STATE_RG}: '${st_exists}'. Nothing was changed."; exit 2 ;;
+esac
+# A supported Terraform state: a JSON object with "version": 4 and a "resources" array
+# whose entries are objects with a string "mode" of "managed" or "data". Anything else
+# ({}, null, missing or wrong-type resources, malformed JSON) is INCONCLUSIVE.
+STATE_SHAPE='type == "object" and .version == 4 and (.resources | type == "array")
+  and all(.resources[]; type == "object" and (.mode == "managed" or .mode == "data"))'
 if [[ "${st_exists}" == true ]]; then
   # Reading the state needs a data-plane role (e.g. Storage Blob Data Reader) for the signed-in owner.
   if az storage blob download --auth-mode login --account-name "${SA}" --container-name "${CONTAINER}" \
        --name "${STATE_KEY}" --file "${STATE_FILE}" --no-progress >/dev/null 2>"${ERR}"; then
-    if ! res="$(jq '[.resources[]? | select(.mode == "managed")] | length' "${STATE_FILE}" 2>/dev/null)" || [[ ! "${res}" =~ ^[0-9]+$ ]]; then
-      echo "INCONCLUSIVE: could not parse the Terraform state blob. Nothing was changed."; exit 2
+    # --slurp: an empty file or several JSON documents become an array that fails the length check.
+    if ! jq -e -s "length == 1 and (.[0] | ${STATE_SHAPE})" "${STATE_FILE}" >/dev/null 2>&1; then
+      echo "INCONCLUSIVE: the state blob is not a supported Terraform state (expected version 4 with a resources array). Nothing was changed."; exit 2
     fi
+    res="$(jq '[.resources[] | select(.mode == "managed")] | length' "${STATE_FILE}" 2>/dev/null)"
+    [[ "${res}" =~ ^[0-9]+$ ]] || { echo "INCONCLUSIVE: could not count managed resources in the state. Nothing was changed."; exit 2; }
     if (( res > 0 )); then
       echo "SAFETY: Terraform state still tracks ${res} managed resource(s). Run the Destroy workflow first. Nothing was changed."; exit 1
     fi
     echo "OK: Terraform state tracks no managed resources"
-  elif grep -qE "BlobNotFound|ContainerNotFound|StorageAccountNotFound|ResourceNotFound" "${ERR}"; then
+  elif grep -qE "BlobNotFound|ContainerNotFound" "${ERR}"; then
     echo "OK: no Terraform state blob found"
   else
     echo "INCONCLUSIVE: could not read the Terraform state blob (grant yourself 'Storage Blob Data Reader' on the container, then re-run):"; show_err; exit 2
