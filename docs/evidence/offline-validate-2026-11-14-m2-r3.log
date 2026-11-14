@@ -61,10 +61,10 @@ PASS: /opt/atlas/app/index.html matches app/index.html
 PASS: /opt/atlas/app/run-container.sh matches app/run-container.sh
 
 ==> cloud-init schema validation
-2026-11-14 10:08:38,186 - sources[WARNING]: failed loading pickle in /var/lib/cloud/instance/obj.pkl: [Errno 13] Permission denied: '/var/lib/cloud/instance/obj.pkl'
-2026-11-14 10:08:38,189 - log_util.py[WARNING]: Failed pickling datasource to /var/lib/cloud/instance/obj.pkl
-2026-11-14 10:08:38,189 - log_util.py[WARNING]: Getting data from <class 'cloudinit.sources.DataSourceNone.DataSourceNone'> failed
-2026-11-14 10:08:38,199 - schema.py[WARNING]: datasource not detected, using default instance-data/user-data paths.
+2026-11-14 10:10:38,568 - sources[WARNING]: failed loading pickle in /var/lib/cloud/instance/obj.pkl: [Errno 13] Permission denied: '/var/lib/cloud/instance/obj.pkl'
+2026-11-14 10:10:38,570 - log_util.py[WARNING]: Failed pickling datasource to /var/lib/cloud/instance/obj.pkl
+2026-11-14 10:10:38,571 - log_util.py[WARNING]: Getting data from <class 'cloudinit.sources.DataSourceNone.DataSourceNone'> failed
+2026-11-14 10:10:38,579 - schema.py[WARNING]: datasource not detected, using default instance-data/user-data paths.
 Valid schema build/cloud-init.rendered.yaml
 
 ==> Script behaviour tests (stubbed az/terraform/curl/ssh, no network)
@@ -152,6 +152,7 @@ PASS: bootstrap --apply: hardened state storage, delete lock, versioning, soft d
 PASS: bootstrap --apply: least-privilege roles, no role-assignment rights, exact OIDC subjects
 PASS: bootstrap --apply: legacy name-only OIDC subjects are updated to the immutable format
 PASS: bootstrap --apply: correct OIDC subjects are left unchanged
+PASS: bootstrap --apply: correct subject but wrong issuer or audience is repaired
 PASS: bootstrap: another --github-repo without its IDs -> exit 2
 PASS: bootstrap: non-numeric --github-repo-id -> exit 2
 
@@ -220,7 +221,7 @@ PASS: runner-ip: private address -> exit 2
 PASS: runner-ip: lookup failure -> exit 2
 PASS: wait-for-health: /health 200 -> exit 0
 
-Script tests: 138 passed, 0 failed (of 138)
+Script tests: 139 passed, 0 failed (of 139)
 
 ==> Workflow security policy tests
 PASS: ci.yml meets the workflow security policy

@@ -92,6 +92,11 @@ run_case "bootstrap --apply: correct OIDC subjects are left unchanged" 0 ../boot
   PATH="${M2PATH}" IDENTITIES_EXIST=1 FED_SUBJECT=immutable -- "${BOOT[@]}" --apply
 has "OK: gha-azure-plan-main already trusts"; log_count "federated-credential (create|update)" 0; done_case
 
+run_case "bootstrap --apply: correct subject but wrong issuer or audience is repaired" 0 ../bootstrap/bootstrap.sh \
+  PATH="${M2PATH}" IDENTITIES_EXIST=1 FED_SUBJECT=immutable FED_AUDIENCE=api://wrong -- "${BOOT[@]}" --apply
+log_count "federated-credential update .*--issuer https://token.actions.githubusercontent.com .*--audiences api://AzureADTokenExchange" 3
+lacks "already trusts"; done_case
+
 run_case "bootstrap: another --github-repo without its IDs -> exit 2" 2 ../bootstrap/bootstrap.sh PATH="${M2PATH}" -- \
   "${BOOT[@]}" --github-repo someone/fork
 has "must be numeric"; no_writes; done_case

@@ -367,7 +367,7 @@ Azure sign-in would have failed (`AADSTS70021`). No Deploy run had been started.
 Fix: `bootstrap.sh` builds the immutable subject from the owner and repository IDs
 (defaults for this repository; `--github-owner-id`/`--github-repo-id` for another
 `--github-repo`), and re-running it updates a federated credential whose subject differs
-instead of skipping it. `setup-github.sh` sets `use_immutable_subject: true` explicitly.
+(or whose issuer or audience differs) instead of skipping it. `setup-github.sh` sets `use_immutable_subject: true` explicitly.
 Raw output: [`evidence/offline-validate-2026-11-14-m2-r3.log`](evidence/offline-validate-2026-11-14-m2-r3.log).
 
 ### Summary: 12 passed, 0 failed, 0 skipped (`REQUIRE_ALL=1`, exit 0)
@@ -375,7 +375,7 @@ Raw output: [`evidence/offline-validate-2026-11-14-m2-r3.log`](evidence/offline-
 | Check | Result |
 | --- | --- |
 | `terraform test` | PASS - 17/17 |
-| Script behaviour tests | PASS - 138/138 (4 new: legacy subjects updated in place, correct subjects unchanged, other repo without IDs refused, non-numeric ID refused) |
+| Script behaviour tests | PASS - 139/139 (5 new: legacy subjects updated in place, correct subjects unchanged, wrong issuer/audience repaired, other repo without IDs refused, non-numeric ID refused) |
 | Workflow security policy tests, actionlint, ShellCheck | PASS |
 | Local web service test (Docker) | PASS - 9/9 |
 

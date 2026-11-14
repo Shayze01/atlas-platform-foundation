@@ -208,8 +208,10 @@ fed() { # identity credential-name environment
   local want current action=create
   want="$(subject "$3")"
   if current="$(az identity federated-credential show --name "$2" --identity-name "$1" \
-       --resource-group "${STATE_RG}" --query subject --output tsv 2>/dev/null)"; then
-    if [[ "${current}" == "${want}" ]]; then echo "OK: $2 already trusts ${want}"; return 0; fi
+       --resource-group "${STATE_RG}" --query "[issuer, subject, join(',', audiences)]" --output tsv 2>/dev/null)"; then
+    if [[ "$(tr '\n' ' ' <<<"${current}")" == "${OIDC_ISSUER} ${want} ${OIDC_AUDIENCE} " ]]; then
+      echo "OK: $2 already trusts ${want}"; return 0
+    fi
     action=update
   fi
   run "${action} federated credential $2" -- identity federated-credential "${action}" --name "$2" \
