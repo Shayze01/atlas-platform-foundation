@@ -14,12 +14,12 @@ run "plan_with_valid_inputs" {
   command = plan
 
   assert {
-    condition     = azurerm_resource_group.this.name == "rg-atlas-foundation-dev" && azurerm_resource_group.this.location == "eastus"
+    condition     = azurerm_resource_group.this[0].name == "rg-atlas-foundation-dev" && azurerm_resource_group.this[0].location == "eastus"
     error_message = "Resource group name/location defaults are wrong."
   }
 
   assert {
-    condition = azurerm_resource_group.this.tags == tomap({
+    condition = azurerm_resource_group.this[0].tags == tomap({
       Project     = "atlas-foundation"
       Environment = "dev"
       Owner       = "tester@example.com"
@@ -129,4 +129,39 @@ run "rejects_invalid_auto_shutdown_time" {
     auto_shutdown_time = "2:00"
   }
   expect_failures = [var.auto_shutdown_time]
+}
+
+run "creates_resource_group_by_default" {
+  command = plan
+
+  assert {
+    condition     = length(azurerm_resource_group.this) == 1 && length(data.azurerm_resource_group.existing) == 0
+    error_message = "Milestone 1 default must create the resource group and not look up an existing one."
+  }
+}
+
+run "uses_existing_resource_group_when_not_creating" {
+  command = plan
+
+  variables {
+    create_resource_group = false
+  }
+
+  override_data {
+    target = data.azurerm_resource_group.existing[0]
+    values = {
+      name     = "rg-atlas-foundation-dev"
+      location = "eastus"
+    }
+  }
+
+  assert {
+    condition     = length(azurerm_resource_group.this) == 0
+    error_message = "With create_resource_group = false Terraform must not manage (or destroy) the resource group."
+  }
+
+  assert {
+    condition     = output.resource_group_name == "rg-atlas-foundation-dev" && output.vm_name == "vm-atlas-foundation-dev"
+    error_message = "Workload resources must be placed in the existing bootstrap resource group."
+  }
 }

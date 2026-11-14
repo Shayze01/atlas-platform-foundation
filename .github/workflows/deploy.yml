@@ -1,0 +1,213 @@
+# Owner-triggered deployment from trusted main:
+#   plan (azure-plan, Reader)  ->  your approval (azure-deploy)  ->  apply exactly that
+#   plan, validate with temporary /32 runner access, remove it, optionally destroy.
+# failure-cleanup (azure-destroy) destroys the workload if apply/validation failed or
+# was cancelled. Raw plans, state and variable values are never printed or uploaded
+# as artifacts; the reviewed plan is kept in the private state container.
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      after_validation:
+        description: "After validation passes"
+        type: choice
+        options: [destroy, keep-running]
+        default: destroy
+
+permissions: {}
+
+# Shared with destroy.yml: deployment and destruction never overlap.
+concurrency:
+  group: atlas-azure-dev
+  cancel-in-progress: false
+
+env:
+  TF_IN_AUTOMATION: "1"
+  TF_INPUT: "0"
+  TF_VAR_create_resource_group: "false"
+  ARM_USE_OIDC: "true"
+  ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+  TFSTATE_STORAGE_ACCOUNT: ${{ vars.TFSTATE_STORAGE_ACCOUNT }}
+  TFSTATE_CONTAINER: ${{ vars.TFSTATE_CONTAINER }}
+
+jobs:
+  plan:
+    name: Plan (sanitised summary)
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    environment: azure-plan
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      TF_VAR_admin_source_ip_cidr: ${{ secrets.ADMIN_SOURCE_IP_CIDR }}
+      TF_VAR_admin_ssh_public_key: ${{ secrets.ADMIN_SSH_PUBLIC_KEY }}
+      TF_VAR_owner: ${{ secrets.OWNER_TAG }}
+    outputs:
+      plan_sha256: ${{ steps.summary.outputs.plan_sha256 }}
+      has_changes: ${{ steps.summary.outputs.has_changes }}
+      plan_blob: ${{ steps.store.outputs.plan_blob }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: 1.9.8
+          terraform_wrapper: false
+      - name: Azure login (OIDC, plan identity)
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Terraform init (remote state, Entra ID)
+        run: ./scripts/ci/backend-init.sh 2>&1 | ./scripts/ci/sanitize.sh
+      - name: Terraform plan (full output kept off the log)
+        run: |
+          if ! terraform plan -input=false -lock-timeout=5m -no-color -out=tfplan >"${RUNNER_TEMP}/plan.log" 2>&1; then
+            echo "terraform plan failed; sanitised tail:"
+            tail -n 40 "${RUNNER_TEMP}/plan.log" | ./scripts/ci/sanitize.sh
+            exit 1
+          fi
+      - name: Sanitised plan summary
+        id: summary
+        run: ./scripts/ci/plan-summary.sh tfplan | tee -a "${GITHUB_STEP_SUMMARY}"
+      - name: Store the reviewed plan privately (state container, plans/, 7-day expiry)
+        id: store
+        if: steps.summary.outputs.has_changes == 'true'
+        run: |
+          blob="plans/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.tfplan"
+          az storage blob upload --auth-mode login --account-name "${TFSTATE_STORAGE_ACCOUNT}" \
+            --container-name "${TFSTATE_CONTAINER}" --name "${blob}" --file tfplan \
+            --no-progress --only-show-errors --output none
+          echo "plan_blob=${blob}" >>"${GITHUB_OUTPUT}"
+      - name: Remove local plan files
+        if: always()
+        run: rm -f tfplan "${RUNNER_TEMP}/plan.log"
+
+  apply:
+    name: Apply reviewed plan and validate
+    needs: plan
+    if: github.ref == 'refs/heads/main' && needs.plan.outputs.has_changes == 'true'
+    runs-on: ubuntu-24.04
+    environment: azure-deploy
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      TF_VAR_admin_source_ip_cidr: ${{ secrets.ADMIN_SOURCE_IP_CIDR }}
+      TF_VAR_admin_ssh_public_key: ${{ secrets.ADMIN_SSH_PUBLIC_KEY }}
+      TF_VAR_owner: ${{ secrets.OWNER_TAG }}
+      EXPECTED_ADMIN_CIDR: ${{ secrets.ADMIN_SOURCE_IP_CIDR }}
+      PLAN_BLOB: ${{ needs.plan.outputs.plan_blob }}
+      PLAN_SHA256: ${{ needs.plan.outputs.plan_sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: 1.9.8
+          terraform_wrapper: false
+      - name: Azure login (OIDC, deploy identity)
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Terraform init (remote state, Entra ID)
+        run: ./scripts/ci/backend-init.sh 2>&1 | ./scripts/ci/sanitize.sh
+      - name: Fetch the reviewed plan and verify its SHA-256
+        run: |
+          az storage blob download --auth-mode login --account-name "${TFSTATE_STORAGE_ACCOUNT}" \
+            --container-name "${TFSTATE_CONTAINER}" --name "${PLAN_BLOB}" --file tfplan \
+            --no-progress --only-show-errors --output none
+          echo "${PLAN_SHA256}  tfplan" | sha256sum -c --strict -
+      - name: Apply exactly the reviewed plan
+        run: terraform apply -input=false -lock-timeout=5m -no-color tfplan 2>&1 | ./scripts/ci/sanitize.sh
+      - name: Delete the stored plan
+        if: always()
+        run: |
+          rm -f tfplan
+          az storage blob delete --auth-mode login --account-name "${TFSTATE_STORAGE_ACCOUNT}" \
+            --container-name "${TFSTATE_CONTAINER}" --name "${PLAN_BLOB}" --only-show-errors --output none \
+            || echo "plan blob not deleted now; the 7-day lifecycle rule removes it"
+      - name: Runner public IP (masked)
+        run: |
+          cidr="$(./scripts/ci/runner-ip.sh)"
+          echo "::add-mask::${cidr%/32}"
+          echo "::add-mask::${cidr}"
+          echo "RUNNER_CIDR=${cidr}" >>"${GITHUB_ENV}"
+      - name: Temporary /32 access for this runner
+        run: ./scripts/ci/temp-access.sh add "${RUNNER_CIDR}"
+      - name: Wait for the web service
+        run: ./scripts/ci/wait-for-health.sh
+      - name: Public endpoint checks (from the runner)
+        run: ./scripts/azure-validate.sh public 2>&1 | ./scripts/ci/sanitize.sh
+      - name: In-VM checks (Azure Run Command)
+        run: |
+          printf '%s\n' "${TF_VAR_admin_ssh_public_key}" >"${RUNNER_TEMP}/admin.pub"
+          ADMIN_PUBKEY_FILE="${RUNNER_TEMP}/admin.pub" ./scripts/azure-validate.sh in-vm 2>&1 | ./scripts/ci/sanitize.sh
+      - name: Remove temporary runner access (always)
+        if: always()
+        run: ./scripts/ci/temp-access.sh remove 2>&1 | ./scripts/ci/sanitize.sh
+      - name: Confirm runner access is blocked again
+        run: ./scripts/azure-validate.sh blocked 2>&1 | ./scripts/ci/sanitize.sh
+      - name: Destroy workload after successful validation
+        if: success() && inputs.after_validation == 'destroy'
+        run: |
+          terraform destroy -auto-approve -input=false -lock-timeout=5m -no-color 2>&1 | ./scripts/ci/sanitize.sh
+          KEEP_RESOURCE_GROUP=1 ./scripts/verify-cleanup.sh 2>&1 | ./scripts/ci/sanitize.sh
+      - name: Reminder - workload left running
+        if: success() && inputs.after_validation == 'keep-running'
+        run: |
+          echo "::warning::Workload left running. It is deallocated at 02:00 UK time and destroyed by the nightly Destroy workflow; run Destroy when finished." 
+
+  failure-cleanup:
+    name: Cleanup after failed or cancelled deployment
+    needs: [plan, apply]
+    if: >-
+      always() && github.ref == 'refs/heads/main' &&
+      (needs.apply.result == 'failure' || needs.apply.result == 'cancelled')
+    runs-on: ubuntu-24.04
+    environment: azure-destroy
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      TF_VAR_admin_source_ip_cidr: ${{ secrets.ADMIN_SOURCE_IP_CIDR }}
+      TF_VAR_admin_ssh_public_key: ${{ secrets.ADMIN_SSH_PUBLIC_KEY }}
+      TF_VAR_owner: ${{ secrets.OWNER_TAG }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: 1.9.8
+          terraform_wrapper: false
+      - name: Azure login (OIDC, deploy identity)
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Terraform init (remote state, Entra ID)
+        run: ./scripts/ci/backend-init.sh 2>&1 | ./scripts/ci/sanitize.sh
+      - name: Remove temporary runner access if it is still there
+        run: ./scripts/ci/temp-access.sh remove 2>&1 | ./scripts/ci/sanitize.sh
+      - name: Destroy the workload
+        if: always()
+        run: terraform destroy -auto-approve -input=false -lock-timeout=10m -no-color 2>&1 | ./scripts/ci/sanitize.sh
+      - name: Verify cleanup (resource group kept, empty)
+        if: always()
+        run: KEEP_RESOURCE_GROUP=1 ./scripts/verify-cleanup.sh 2>&1 | ./scripts/ci/sanitize.sh

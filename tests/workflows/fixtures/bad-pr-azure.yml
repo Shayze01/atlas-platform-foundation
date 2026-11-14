@@ -1,0 +1,16 @@
+# Deliberately unsafe: PR code with Azure access. Used only by test_workflow_policy.py.
+name: bad-pr
+on: [pull_request]
+permissions:
+  contents: read
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    environment: azure-deploy
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: echo "${{ secrets.ADMIN_SOURCE_IP_CIDR }}"

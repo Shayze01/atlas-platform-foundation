@@ -284,3 +284,37 @@ classification and argument/tool checks (16 new script cases and one changed
 case: NSG read error is now exit 2 INCONCLUSIVE instead of exit 1), and test
 fixtures using only RFC 5737 documentation addresses.
 
+## 6. Milestone 2 offline checks (executed 2026-11-14, feature branch)
+
+New run on the Milestone 2 branch, separate from every result above. **No Azure or
+GitHub resources were created or changed**; the bootstrap, GitHub setup and workflows
+have not run for real yet. Raw output:
+[`evidence/offline-validate-2026-11-14-m2.log`](evidence/offline-validate-2026-11-14-m2.log).
+
+Command: `REQUIRE_ALL=1 ./scripts/validate.sh` (a skipped check would fail the run).
+Environment: Ubuntu 22.04.5 LTS, Terraform v1.9.8, azurerm 5.13.0, Docker 29.9.2,
+cloud-init 26.1, ShellCheck 0.11.0, actionlint 1.7.12, PyYAML 5.4.1.
+
+### Summary: 12 passed, 0 failed, 0 skipped (exit 0)
+
+| # | Check | Result | Detail |
+| --- | --- | --- | --- |
+| 1 | `terraform fmt -check -recursive` | PASS | |
+| 2 | `terraform init -backend=false` | PASS | |
+| 3 | `terraform validate` | PASS | |
+| 4 | `terraform test` (mocked provider) | PASS | 17 passed, 0 failed (2 new: resource group created by default / existing group used when `create_resource_group = false`). |
+| 5 | Render cloud-init | PASS | |
+| 6 | Embedded app files unchanged | PASS | |
+| 7 | `cloud-init schema` | PASS | |
+| 8 | Script behaviour tests | PASS | 110 passed, 0 failed: 18 `verify-cleanup.sh` (5 new), 16 `connectivity-check.sh`, 31 `azure-validate.sh`, 10 `bootstrap.sh`, 6 `teardown.sh`, 5 `setup-github.sh`, 24 `scripts/ci/*`. |
+| 9 | Workflow security policy tests | PASS | `ci.yml`, `deploy.yml`, `destroy.yml` pass; 4 cross-workflow rules pass; both bad fixtures rejected. |
+| 10 | `actionlint` | PASS | No findings. |
+| 11 | `shellcheck` | PASS | No findings (now includes `bootstrap/`, `scripts/ci/`, `scripts/github/`, `stubs-m2/`). |
+| 12 | Local web service test (Docker) | PASS | 9/9 checks. |
+
+Not yet verified (requires the owner-run setup and an approved live window): OIDC
+login with the customised subject, Reader being sufficient for `terraform plan`, Run
+Command and NSG changes with the RG-scoped Contributor role, storage lifecycle and
+lock behaviour, the GitHub environment approval flow, and the first `ci.yml` run on
+GitHub.
+

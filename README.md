@@ -4,12 +4,18 @@ Milestone 1 of the **Atlas** cloud engineering portfolio: a small, secure, fully
 reproducible Azure landing spot for a containerised web service, built with
 **Terraform**, **Azure networking**, **Ubuntu Linux**, **cloud-init** and **Docker**.
 
+**Milestone 2 (in progress)** adds the deployment engine: pull-request CI, GitHub
+Actions OIDC to Azure (no stored secrets), Terraform remote state in Azure Storage,
+an approved plan/apply workflow with automatic validation and cleanup. Code and
+offline tests only so far - nothing has been run against Azure or GitHub yet. See
+[`docs/milestone-2.md`](docs/milestone-2.md) and [section 17](#17-milestone-2-deployment-engine).
+
 > **Status:** deployed to Azure (East US, `Standard_B2ats_v2`) on 2026-11-13 from a
 > reviewed saved plan, validated, then destroyed. Public, in-VM (Azure Run Command)
 > and network-restriction checks passed after two validation-script fixes; results,
 > limitations and anything untested are in [`docs/validation-log.md`](docs/validation-log.md)
 > section 4, with sanitised output in [`docs/evidence/2026-11-13-deployment/`](docs/evidence/2026-11-13-deployment/).
-> Latest offline run (2026-11-13, after the deployment): `validate.sh` 10 passed, 0 failed, 0 skipped; `terraform test` 15/15; script tests 60/60 - see section 15.
+> Latest offline run (2026-11-14, Milestone 2 branch): `validate.sh` (`REQUIRE_ALL=1`) 12 passed, 0 failed, 0 skipped; `terraform test` 17/17; script tests 110/110 - see section 15.
 
 ---
 
@@ -31,6 +37,7 @@ reproducible Azure landing spot for a containerised web service, built with
 14. [Terraform state (local) and its limitations](#14-terraform-state-local-and-its-limitations)
 15. [Offline validation and tests](#15-offline-validation-and-tests)
 16. [Security notes and known limitations](#16-security-notes-and-known-limitations)
+17. [Milestone 2: deployment engine](#17-milestone-2-deployment-engine)
 
 ---
 
@@ -101,7 +108,7 @@ atlas-platform-foundation/
 ├── versions.tf                  # Terraform + azurerm version constraints, provider block
 ├── variables.tf                 # Input variables with validation
 ├── locals.tf                    # Naming, common tags, rendered cloud-init
-├── main.tf                      # Resource group + networking and compute modules
+├── main.tf                      # Resource group (or existing group in CI) + networking and compute modules
 ├── outputs.tf                   # Public IP, SSH command, URLs
 ├── terraform.tfvars.example     # Safe placeholder values (copy to terraform.tfvars)
 ├── .terraform.lock.hcl          # Provider lock file (committed on purpose)
@@ -115,16 +122,23 @@ atlas-platform-foundation/
 │   ├── nginx.conf
 │   ├── index.html
 │   └── run-container.sh         # Builds and runs the container (VM and local test)
+├── .github/workflows/           # Milestone 2: ci.yml (PRs), deploy.yml, destroy.yml
+├── bootstrap/                   # Milestone 2: owner-run bootstrap.sh / teardown.sh (Azure, one-time)
 ├── tests/                       # terraform test files (mocked provider, offline)
-│   └── scripts/                 # Stub-based tests for connectivity-check.sh and verify-cleanup.sh
+│   ├── scripts/                 # Stub-based tests for every shell script (stubs/, stubs-m2/)
+│   └── workflows/               # Workflow security policy test + deliberately bad fixtures
 ├── scripts/
 │   ├── validate.sh              # Runs every offline check
 │   ├── test-web-local.sh        # Local Docker test of / and /health
 │   ├── render-cloud-init.sh     # Renders cloud-init exactly as Terraform would
 │   ├── check-cloud-init-files.py
 │   ├── connectivity-check.sh    # Post-deployment checks against the real VM
-│   └── verify-cleanup.sh        # Read-only check that this project's resources are gone
+│   ├── azure-validate.sh        # Key-less public / in-VM / blocked-access validation
+│   ├── verify-cleanup.sh        # Read-only check that this project's resources are gone
+│   ├── ci/                      # Milestone 2 workflow helpers (backend init, plan summary, sanitiser, temp access)
+│   └── github/setup-github.sh   # Milestone 2: owner-run GitHub environments/OIDC setup
 └── docs/
+    ├── milestone-2.md           # Deployment engine: architecture, trust, setup, recovery, costs
     ├── validation-log.md        # Output of offline checks that were actually run
     └── evidence/                # Your redacted deployment screenshots
 ```
@@ -275,6 +289,7 @@ admin_source_ip_cidr = "203.0.113.10/32"
 | `auto_shutdown_enabled` | no | `true` | Creates a daily auto-shutdown schedule that stops and deallocates the VM. A safety net, not a replacement for `terraform destroy`: the public IP and disk keep billing while deallocated. |
 | `auto_shutdown_time` | no | `0200` | Shutdown time, `HHMM` 24-hour format (validated). |
 | `auto_shutdown_timezone` | no | `GMT Standard Time` | Windows time-zone ID. `GMT Standard Time` is UK local time and follows British Summer Time. |
+| `create_resource_group` | no | `true` | `true` (Milestone 1): Terraform creates and deletes `rg-<project>-<env>`. `false` (Milestone 2 workflows): use the existing group created by `bootstrap/bootstrap.sh`, so `terraform destroy` keeps the group and its role assignments. |
 
 ## 7. Validate, plan and apply
 
@@ -731,8 +746,10 @@ This milestone stores state in `terraform.tfstate` in the repository folder
   they keep running and billing. Recover by deleting only this project's resource group (section 9).
 - **No history/versioning or backup.**
 
-Planned for a later milestone: an `azurerm` remote backend (Azure Storage
-account with blob versioning and state locking).
+Milestone 2 adds an `azurerm` remote backend for the GitHub Actions workflows
+(Entra-only Azure Storage with blob-lease locking, versioning, soft delete and a
+delete lock) - see [`docs/milestone-2.md`](docs/milestone-2.md). The backend block is
+generated only in CI, so this local workflow is unchanged.
 
 ## 15. Offline validation and tests
 
@@ -743,20 +760,25 @@ nothing. One command runs all checks and ends with a PASS / FAIL / SKIP summary:
 ./scripts/validate.sh
 ```
 
+In CI (`.github/workflows/ci.yml`) it runs with `REQUIRE_ALL=1`, which turns every
+SKIP into a failure, so a missing tool can never make the run look complete.
+
 | # | Check (step name in `validate.sh`) | What it verifies |
 | --- | --- | --- |
 | 1 | `terraform fmt -check -recursive` | Formatting of all `.tf` / `.tftest.hcl` files. |
 | 2 | `terraform init -backend=false` | Provider/module installation from the lock file, no backend. |
 | 3 | `terraform validate` | Syntax, types and provider schema. |
-| 4 | `terraform test` | 15 test runs with a **mocked azurerm provider** (listed below). |
+| 4 | `terraform test` | 17 test runs with a **mocked azurerm provider** (listed below). |
 | 5 | Render cloud-init | Renders the template exactly as Terraform would (`build/cloud-init.rendered.yaml`). |
 | 6 | Embedded app files unchanged | The 4 app files inside cloud-init match `./app` byte-for-byte. |
 | 7 | `cloud-init schema` | The rendered cloud-init is valid (SKIP if cloud-init is not installed). |
-| 8 | Script behaviour tests | 60 stub-based cases for `verify-cleanup.sh`, `connectivity-check.sh` and `azure-validate.sh` (listed below). |
-| 9 | `shellcheck` | `app/run-container.sh`, `scripts/*.sh`, `tests/scripts/` (SKIP if shellcheck is not installed). |
-| 10 | Local web service test | 9 Docker checks: `/health` 200 + JSON body, `/` 200 + title, unknown path 404, nginx version hidden, non-root user, read-only root filesystem, `HEALTHCHECK` healthy (SKIP if Docker is unavailable). |
+| 8 | Script behaviour tests | 110 stub-based cases for every shell script (listed below). |
+| 9 | Workflow security policy tests | `tests/workflows/test_workflow_policy.py`: PR workflows get no Azure access, Azure jobs are main-only with an environment, actions pinned to SHAs, no artifacts, saved plans only, sanitised output, shared concurrency; also proves it rejects two bad fixtures (SKIP without PyYAML). |
+| 10 | `actionlint` | Workflow syntax and expression checks (SKIP if not installed). |
+| 11 | `shellcheck` | Every shell script and stub (SKIP if shellcheck is not installed). |
+| 12 | Local web service test | 9 Docker checks: `/health` 200 + JSON body, `/` 200 + title, unknown path 404, nginx version hidden, non-root user, read-only root filesystem, `HEALTHCHECK` healthy (SKIP if Docker is unavailable). |
 
-The 15 `terraform test` runs:
+The 17 `terraform test` runs:
 
 | File | Run | Checks |
 | --- | --- | --- |
@@ -775,6 +797,8 @@ The 15 `terraform test` runs:
 | `tests/root.tftest.hcl` | `temporary_test_rule_only_allows_listed_32s` | Exactly one temporary rule, allowing only the listed `/32`s. |
 | `tests/root.tftest.hcl` | `rejects_test_source_wider_than_32` | A `/24` test source is rejected. |
 | `tests/root.tftest.hcl` | `rejects_invalid_auto_shutdown_time` | `2:00` is rejected (must be `HHMM`). |
+| `tests/root.tftest.hcl` | `creates_resource_group_by_default` | Milestone 1 default creates the group and does not look one up. |
+| `tests/root.tftest.hcl` | `uses_existing_resource_group_when_not_creating` | With `create_resource_group = false`, Terraform manages no group (so destroy keeps it) and places resources in the existing one. |
 
 The script behaviour tests (`tests/scripts/run-script-tests.sh`) put stub
 `az`, `terraform`, `curl`, `ssh` and `timeout` commands from
@@ -784,15 +808,23 @@ network. Fixture addresses are documentation-only ranges (RFC 5737:
 
 | Script | Cases |
 | --- | --- |
-| `verify-cleanup.sh` (13) | All absent (exit 0); custom suffix stays in its own resource group; remaining group/public IP/state (exit 1); not logged in, expired token, `AuthorizationFailed`, network failure, unexpected error, unexpected `az group exists` output, one lookup failing among successes, failed `terraform state list`, no state file (all exit 2, `INCONCLUSIVE`); remaining + inconclusive (exit 1). Every case also asserts each `az` call is scoped to the project resource group. |
+| `verify-cleanup.sh` (18) | `KEEP_RESOURCE_GROUP=1` (Milestone 2): group kept and empty (exit 0); resources left in it, group missing (exit 1); resource count error (exit 2, never PASS); invalid flag value (exit 2). Milestone 1 mode: all absent (exit 0); custom suffix stays in its own resource group; remaining group/public IP/state (exit 1); not logged in, expired token, `AuthorizationFailed`, network failure, unexpected error, unexpected `az group exists` output, one lookup failing among successes, failed `terraform state list`, no state file (all exit 2, `INCONCLUSIVE`); remaining + inconclusive (exit 1). Every case also asserts each `az` call is scoped to the project resource group. |
 | `connectivity-check.sh` (16) | All healthy (exit 0); `/health` HTTP 500, `/health` wrong body, landing page without title, HTTP timeout, connection refused, SSH timeout, auth-probe timeout, key rejected, password auth enabled, `sshd -T` unreadable, cloud-init error, container unhealthy, TCP ports closed (all exit 1); missing Terraform outputs, missing SSH key (exit 2). The SSH-timeout case asserts that no SSH, cloud-init, container or password check is reported as PASS. |
 | `azure-validate.sh` (31) | **public** (4): healthy (exit 0); HTTP timeout, SSH timeout (never proof), password offered (exit 1). **in-vm** (7): healthy with key installed and outbound via the public IP (exit 0); Run Command error never passes, outbound IP mismatch, password auth enabled, cloud-init running, container unhealthy, admin key missing (exit 1). **blocked** (20): rules final + connect timeouts, also with curl 8 timeout wording (exit 0); temporary rule present, HTTP still reachable, TCP 22 still connects, HTTP timeout *after* connecting, failure + inconclusive together (exit 1); NSG read error, HTTP refused, HTTP network unreachable, curl invalid option, TCP 22 refused, TCP 22 unreachable, `timeout` tool error, failed Internet control request (VM then not probed), `timeout` or `curl` missing from `PATH` (no Azure call made), malformed `EXPECTED_ADMIN_CIDR`, non-numeric `CONNECT_TIMEOUT`, unexpected extra argument (all exit 2, never PASS). |
+| `bootstrap/bootstrap.sh` (10) | Dry run makes no Azure writes; wrong tenant, wrong subscription (exit 1, no writes); not signed in, group check error, missing `--owner-tag` (exit 2); unexpected resources in either target group (exit 1 before any write); `--apply`: storage with shared keys off, public blob access off, TLS 1.2, versioning, blob/container soft delete, private container, lifecycle policy, delete lock; exactly 4 role assignments (Reader / Contributor on the workload group, Blob Data Contributor on the container only), never Owner / User Access Administrator / RBAC Administrator, never at subscription or state-group scope, exactly 3 federated credentials with exact main-branch subjects, no other resource group (or `NetworkWatcherRG`) touched, nothing deleted. |
+| `bootstrap/teardown.sh` (6) | Dry run deletes nothing; workload resources present, state still tracking resources, wrong subscription (exit 1, nothing deleted); unreadable state (exit 2, nothing deleted); `--apply` deletes in order workload group -> role assignments -> identities -> lock -> state group **last**. |
+| `scripts/github/setup-github.sh` (5) | Dry run changes nothing and never prints secret values; `--apply`: OIDC claims `repo,context,ref`, read-only token, reviewer only on `azure-deploy`, self-review allowed, all 3 environments main-only, per-environment client IDs, 9 secrets sent on stdin and never logged; not an admin, `0.0.0.0/0`, non-public-key file (exit 2). |
+| `scripts/ci/*` (24) | `backend-init.sh`: Entra/OIDC backend config, refuses client secret / access key / missing settings; `plan-summary.sh`: addresses, actions, counts and SHA only (no IPs, keys or custom_data), no-change plan, unreadable plan; `sanitize.sh` masking; `temp-access.sh`: exact /32 rule, refuses 5 unsafe sources without calling Azure, removal confirmed/absent NSG/still present/inconclusive; `runner-ip.sh`: agree, disagree, private, lookup failure; `wait-for-health.sh`. |
 
-**Latest offline result (2026-11-13, after the Azure deployment and the
-validation-script fixes):** `validate.sh` **10 passed, 0 failed, 0 skipped**;
-`terraform test` 15/15 runs passed; script behaviour tests 60/60 cases passed
-(13 cleanup, 16 connectivity, 31 azure-validate); local web test 9/9 checks
-passed. Raw output: [`docs/evidence/offline-validate-2026-11-13.log`](docs/evidence/offline-validate-2026-11-13.log).
+**Latest offline result (2026-11-14, Milestone 2 branch, `REQUIRE_ALL=1`):**
+`validate.sh` **12 passed, 0 failed, 0 skipped**; `terraform test` 17/17; script
+behaviour tests 110/110; workflow policy all passed; local web test 9/9. Raw output:
+[`docs/evidence/offline-validate-2026-11-14-m2.log`](docs/evidence/offline-validate-2026-11-14-m2.log).
+No Milestone 2 Azure or GitHub checks have run yet.
+
+*Previous offline result (2026-11-13, after the Azure deployment):* 10 passed,
+0 failed, 0 skipped; `terraform test` 15/15; script tests 60/60
+([`docs/evidence/offline-validate-2026-11-13.log`](docs/evidence/offline-validate-2026-11-13.log)).
 
 *Historical:* the first offline run (2026-11-12, before deployment) passed with
 9 `terraform test` runs and 29 script cases; it is kept in
@@ -825,3 +857,28 @@ screenshots.
   not automated.
 - `package_upgrade` is disabled in cloud-init to keep first boot fast and
   predictable.
+
+## 17. Milestone 2: deployment engine
+
+Full design, trust boundaries, owner setup, recovery and costs:
+[`docs/milestone-2.md`](docs/milestone-2.md). In short:
+
+- **CI** (`ci.yml`): every pull request runs all offline checks with no Azure access.
+- **Identity**: two user-assigned managed identities with GitHub OIDC federated
+  credentials limited to this repository, a named environment and `refs/heads/main`.
+  No client secrets, certificates, storage keys or SSH private keys are stored.
+- **Permissions**: plan identity = Reader on `rg-atlas-foundation-dev`; deploy
+  identity = Contributor on it; both = Blob Data Contributor on the state container
+  only. Neither can assign roles.
+- **State**: Azure Storage backend, Entra ID auth only, blob-lease locking,
+  versioning, soft delete, delete lock (`bootstrap/bootstrap.sh`, owner-run, not run yet).
+- **Deploy** (`deploy.yml`, manual from `main`): plan -> sanitised summary -> your
+  approval -> apply exactly that plan -> temporary runner /32 -> public + in-VM checks
+  -> remove rule -> blocked check -> destroy (default). Failures trigger cleanup.
+- **Destroy** (`destroy.yml`): manual and nightly; shares a concurrency group with
+  Deploy. Removes the workload, keeps the bootstrap resources.
+- **Complete teardown** (`bootstrap/teardown.sh`): refuses while any workload exists,
+  deletes the state backend last.
+- Scheduled runs, failure cleanup and the 02:00 UK auto-shutdown are **safeguards, not
+  spending caps**.
+

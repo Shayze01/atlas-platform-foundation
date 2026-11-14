@@ -10,6 +10,10 @@
 # Usage: ./scripts/verify-cleanup.sh [name-suffix]
 #   name-suffix defaults to atlas-foundation-dev (project_name-environment).
 #
+# KEEP_RESOURCE_GROUP=1 (Milestone 2 routine destroy): the resource group is
+# persistent bootstrap infrastructure, so it must still EXIST and contain no
+# resources. A missing group is a failure: the next deployment would not work.
+#
 # Exit codes:
 #   0  every check confirmed absence
 #   1  at least one project resource (or Terraform state entry) remains
@@ -19,6 +23,8 @@ cd "$(dirname "$0")/.." || exit 2
 
 SUFFIX="${1:-atlas-foundation-dev}"
 RG="rg-${SUFFIX}"
+KEEP_RG="${KEEP_RESOURCE_GROUP:-0}"
+case "${KEEP_RG}" in 0|1) ;; *) echo "ERROR: KEEP_RESOURCE_GROUP must be 0 or 1"; exit 2 ;; esac
 remaining=0
 inconclusive=0
 ERR_FILE="$(mktemp)"
@@ -86,15 +92,31 @@ fi
 echo; echo "==> Resource group"
 if [[ "${azure_ok}" == true ]]; then
   if exists="$(az group exists --name "${RG}" 2>"${ERR_FILE}")"; then
-    case "${exists}" in
-      false) echo "PASS: ${RG} does not exist" ;;
-      true)
+    case "${KEEP_RG}:${exists}" in
+      0:false) echo "PASS: ${RG} does not exist" ;;
+      1:false)
+        echo "FAIL: ${RG} does not exist, but it is persistent bootstrap infrastructure (re-run bootstrap/bootstrap.sh)"
+        remaining=$((remaining + 1))
+        ;;
+      0:true)
         echo "FAIL: ${RG} still exists"
         remaining=$((remaining + 1))
         if listing="$(az resource list --resource-group "${RG}" --query "[].{name:name, type:type}" --output table 2>"${ERR_FILE}")"; then
           echo "    Resources inside it:"; indent <<<"${listing}"
         else
           report_inconclusive "could not list resources in ${RG}" "$(cat "${ERR_FILE}")"
+        fi
+        ;;
+      1:true)
+        if count="$(az resource list --resource-group "${RG}" --query "length(@)" --output tsv 2>"${ERR_FILE}")" && [[ "${count}" =~ ^[0-9]+$ ]]; then
+          if (( count == 0 )); then
+            echo "PASS: ${RG} exists (kept for the next deployment) and contains no resources"
+          else
+            echo "FAIL: ${RG} still contains ${count} resource(s)"
+            remaining=$((remaining + count))
+          fi
+        else
+          report_inconclusive "could not count resources in ${RG}" "$(cat "${ERR_FILE}") ${count:-}"
         fi
         ;;
       *) report_inconclusive "'az group exists' returned unexpected output" "${exists}" ;;
@@ -143,6 +165,6 @@ if (( inconclusive > 0 )); then
   echo "(for example 'az login', permissions or network) and run this script again."
   exit 2
 fi
-echo "RESULT: PASS - no resources from ${RG} remain. Charges for them stop from deletion"
+echo "RESULT: PASS - no project resources in ${RG} remain$([[ "${KEEP_RG}" == 1 ]] && echo " (the empty group is kept)"). Charges for them stop from deletion"
 echo "onward; usage already incurred will still appear in Cost Management (data can lag"
 echo "24-48 hours or more). Other resources in the subscription were not queried or changed."

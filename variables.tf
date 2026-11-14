@@ -30,6 +30,12 @@ variable "owner" {
   }
 }
 
+variable "create_resource_group" {
+  description = "true (Milestone 1): Terraform creates and deletes the resource group. false (Milestone 2 deployment engine): use the existing group created by bootstrap/bootstrap.sh, so destroy keeps the group and its role assignments."
+  type        = bool
+  default     = true
+}
+
 variable "location" {
   description = "Azure region for all resources, e.g. eastus. Check VM size availability in the region first."
   type        = string

@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Stub Terraform for the Milestone 2 CI helper tests.
+#   PLAN_SCENARIO changes|nochanges|showfail   ('terraform show -json')
+echo "terraform $*" >>"${STUB_LOG:?}"
+case "$*" in
+  init*) echo "Terraform has been successfully initialized!"; exit 0 ;;
+  "output -raw public_ip_address") printf '203.0.113.10'; exit 0 ;;
+  "show -json "*)
+    case "${PLAN_SCENARIO:-changes}" in
+      showfail) echo "Error: plan file is corrupt" >&2; exit 1 ;;
+      nochanges) echo '{"resource_changes":[{"address":"data.azurerm_resource_group.existing[0]","change":{"actions":["read"]}},{"address":"module.networking.azurerm_virtual_network.this","change":{"actions":["no-op"]}}]}'; exit 0 ;;
+    esac
+    cat <<'JSON'
+{"variables":{"admin_source_ip_cidr":{"value":"203.0.113.77/32"},"admin_ssh_public_key":{"value":"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKAhnnlI7ScyqxeIK1AysQ0aqybx6fYKZbROGFSh78TQ atlas-test-only"}},
+ "resource_changes":[
+  {"address":"module.networking.azurerm_network_security_rule.ssh_admin","change":{"actions":["create"],"after":{"source_address_prefix":"203.0.113.77/32"}}},
+  {"address":"module.compute.azurerm_linux_virtual_machine.this","change":{"actions":["create"],"after":{"custom_data":"I2Nsb3VkLWNvbmZpZw==","admin_ssh_key":[{"public_key":"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKAhnnlI7ScyqxeIK1AysQ0aqybx6fYKZbROGFSh78TQ"}]}}},
+  {"address":"module.compute.azurerm_public_ip.vm","change":{"actions":["delete","create"]}},
+  {"address":"module.networking.azurerm_subnet.workload","change":{"actions":["update"]}},
+  {"address":"module.networking.azurerm_network_security_rule.test_temporary[0]","change":{"actions":["delete"]}},
+  {"address":"data.azurerm_resource_group.existing[0]","change":{"actions":["read"]}}
+ ]}
+JSON
+    exit 0 ;;
+esac
+echo "stub terraform (m2): unhandled: $*" >&2
+exit 99
