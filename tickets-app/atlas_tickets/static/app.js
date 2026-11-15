@@ -144,7 +144,9 @@ async function renderDetail(id) {
   try {
     fill(await api(`/api/tickets/${id}`));
   } catch (e) {
-    view().replaceChildren(el("p", `Ticket not found: ${e.message}`, "error"));
+    const back = el("a", "Back to all tickets");
+    back.href = "#/";
+    view().replaceChildren(el("p", `Ticket ${id}: ${e.message}.`, "error"), back);
     return;
   }
   $("#update-form").addEventListener("submit", async (event) => {
@@ -164,6 +166,7 @@ async function renderDetail(id) {
 async function route() {
   const hash = location.hash || "#/";
   const detail = hash.match(/^#\/tickets\/(\d+)$/);
+  document.title = "Atlas Service Desk (demo)";
   try {
     if (detail) await renderDetail(detail[1]);
     else if (hash.startsWith("#/new")) renderNew();

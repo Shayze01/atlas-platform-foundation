@@ -35,6 +35,25 @@ def run(page, base, label, expect_expiry, shots):
     print("PASS: list page, environment banner and version footer shown")
     shot("01-list")
 
+    size = page.viewport_size
+    page.set_viewport_size({"width": 375, "height": 740})
+    page.reload(wait_until="networkidle")
+    expect(page.get_by_test_id("ticket-table")).to_be_visible()
+    overflow = page.evaluate("document.documentElement.scrollWidth - window.innerWidth")
+    if overflow > 0:
+        raise AssertionError(f"page is {overflow}px wider than a 375px screen")
+    print("PASS: list fits a 375px-wide screen")
+    shot("01b-list-mobile")
+    page.set_viewport_size(size)
+
+    page.get_by_test_id("new-ticket-link").click()
+    page.get_by_test_id("title").fill("x" * 121)
+    page.get_by_test_id("requester").fill("Browser Check (fictional)")
+    page.get_by_test_id("create-ticket").click()
+    expect(page.get_by_test_id("form-error")).to_contain_text("title must be 3-120 characters")
+    print("PASS: overlong title shows a visible validation error")
+    page.goto(base + "/", wait_until="networkidle")
+
     title = f"{label} browser check"
     page.get_by_test_id("new-ticket-link").click()
     page.get_by_test_id("title").fill(title)

@@ -61,10 +61,10 @@ PASS: /opt/atlas/app/index.html matches app/index.html
 PASS: /opt/atlas/app/run-container.sh matches app/run-container.sh
 
 ==> cloud-init schema validation
-2026-11-15 13:37:29,910 - sources[WARNING]: failed loading pickle in /var/lib/cloud/instance/obj.pkl: [Errno 13] Permission denied: '/var/lib/cloud/instance/obj.pkl'
-2026-11-15 13:37:29,912 - log_util.py[WARNING]: Failed pickling datasource to /var/lib/cloud/instance/obj.pkl
-2026-11-15 13:37:29,913 - log_util.py[WARNING]: Getting data from <class 'cloudinit.sources.DataSourceNone.DataSourceNone'> failed
-2026-11-15 13:37:29,921 - schema.py[WARNING]: datasource not detected, using default instance-data/user-data paths.
+2026-11-15 13:52:42,887 - sources[WARNING]: failed loading pickle in /var/lib/cloud/instance/obj.pkl: [Errno 13] Permission denied: '/var/lib/cloud/instance/obj.pkl'
+2026-11-15 13:52:42,889 - log_util.py[WARNING]: Failed pickling datasource to /var/lib/cloud/instance/obj.pkl
+2026-11-15 13:52:42,890 - log_util.py[WARNING]: Getting data from <class 'cloudinit.sources.DataSourceNone.DataSourceNone'> failed
+2026-11-15 13:52:42,897 - schema.py[WARNING]: datasource not detected, using default instance-data/user-data paths.
 Valid schema build/cloud-init.rendered.yaml
 
 ==> Script behaviour tests (stubbed az/terraform/curl/ssh, no network)
@@ -272,14 +272,14 @@ Building atlas-tickets:local-test and atlas-tickets-ui-test:local (log: build/te
 == Unit tests (inside the image)
 .............
 ----------------------------------------------------------------------
-Ran 13 tests in 0.080s
+Ran 13 tests in 0.079s
 
 OK
 PASS: unit tests pass
 == Container
 PASS: /health returns ok
 PASS: /version reports variant healthy
-PASS: /version reports revision f3374106d1f4
+PASS: /version reports revision 271f9a2b17d6
 PASS: image label atlas.variant=healthy (got healthy)
 PASS: container runs as non-root (uid 10001)
 PASS: root filesystem is read-only
@@ -299,6 +299,8 @@ RESULT: ticket flow PASSED
 PASS: flow check exit code 0 (got 0)
 == Browser check (Playwright, Chromium)
 PASS: list page, environment banner and version footer shown
+PASS: list fits a 375px-wide screen
+PASS: overlong title shows a visible validation error
 PASS: ticket created through the form (Open, Critical)
 PASS: status shows 'In progress' after reload, and history records it
 PASS: ticket listed under the 'In progress' filter
