@@ -70,6 +70,12 @@ else
   skip_step "Local web service test (Docker)" "Docker not available"
 fi
 
+if docker_available; then
+  run_step "Ticket app: unit, API flow and browser tests (Docker)" ./scripts/test-tickets-local.sh
+else
+  skip_step "Ticket app: unit, API flow and browser tests (Docker)" "Docker not available"
+fi
+
 echo
 echo "================ Summary ================"
 printf '%s\n' "${results[@]}"
