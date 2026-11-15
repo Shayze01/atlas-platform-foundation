@@ -403,7 +403,7 @@ outputs were reviewed in the working session and are not stored in the repositor
 | 4 | Sanitised summary and 9 fail-closed policy checks (size, region, disk, password auth, 02:00 shutdown, /32 sources, Internet deny, no temporary rule, no implicit outbound) | PASS - 9/9 | `01-plan.log` |
 | 5 | Reviewed plan stored privately, `azure-deploy` approval required and given by the owner | PASS | `01-plan.log`, run page |
 | 6 | OIDC login, deploy identity, `azure-deploy` immutable subject | PASS | `02-apply.log` |
-| 7 | Apply refuses unless the stored plan matches the reviewed SHA-256 (`tfplan: OK`) | PASS | `02-apply.log` |
+| 7 | Downloaded plan SHA-256 matched the reviewed hash before apply (`tfplan: OK`). | PASS | `02-apply.log` |
 | 8 | Apply exactly that plan: 11 added, 0 changed, 0 destroyed; stored plan deleted | PASS | `02-apply.log` |
 | 9 | Temporary `/32` rule for the runner added (TCP 22, 80); web service healthy after 45 s | PASS | `03-temp-access-add.log` |
 | 10 | Public checks: `/` 200 + page text, `/health` 200 + ok, SSH offers only `publickey` | PASS - 5/5 | `04-public.log` |
@@ -417,6 +417,8 @@ outputs were reviewed in the working session and are not stored in the repositor
 
 - **Failure cleanup** (`failure-cleanup` job): skipped because nothing failed. Destroy
   after a failed or cancelled apply has only stubbed tests and pipefail injection.
+- **Deliberate plan hash-mismatch rejection**: the successful run verified a matching hash;
+  rejection of a deliberately mismatched plan was not exercised live.
 - **`azure-destroy` federated credential and `destroy.yml`**: neither the manual nor the
   scheduled (03:30 UTC) Destroy workflow has run. The routine destroy above ran inside
   the Deploy job under `azure-deploy`.
