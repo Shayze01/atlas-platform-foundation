@@ -16,13 +16,24 @@ Destroy workflow, auto-shutdown and complete teardown are not live-tested yet. S
 > and network-restriction checks passed after two validation-script fixes; results,
 > limitations and anything untested are in [`docs/validation-log.md`](docs/validation-log.md)
 > section 4, with sanitised output in [`docs/evidence/2026-11-13-deployment/`](docs/evidence/2026-11-13-deployment/).
-> Latest offline run (2026-11-14, Milestone 2 branch): `validate.sh` (`REQUIRE_ALL=1`) 12 passed, 0 failed, 0 skipped; `terraform test` 17/17; script tests 139/139 - see section 15.
+> Latest offline run (2026-11-15, after the log-masking change): `validate.sh` (`REQUIRE_ALL=1`) 12 passed, 0 failed, 0 skipped; `terraform test` 17/17; script tests 140/140 - see section 15 and
+> [`docs/validation-log.md`](docs/validation-log.md) section 10.
 >
 > Latest live run (2026-11-14, Milestone 2 Deploy run [43588089749](https://github.com/Shayze01/atlas-platform-foundation/actions/runs/43588089749)):
 > 11 resources applied from the reviewed plan, public 5/5, in-VM 10/10, blocked 3/3,
 > 11 destroyed with the workload group kept empty - see
 > [`docs/validation-log.md`](docs/validation-log.md) section 9 and
 > [`docs/evidence/2026-11-14-m2-live-run/`](docs/evidence/2026-11-14-m2-live-run/).
+> **Not live-tested:** failure cleanup, deliberate plan hash-mismatch rejection,
+> `destroy.yml` (manual/nightly) and the `azure-destroy` credential, the 02:00 auto-shutdown
+> firing, `keep-running`, concurrency/lock recovery, lifecycle expiry, planning against
+> existing resources, `teardown.sh`. Costs are estimates pending billing data.
+>
+> **Log masking (section 10):** the tenant, subscription and client IDs and the storage
+> account name are GitHub variables, not secrets. Each Azure job masks them from its
+> second step onwards; the first step's `env:` header still shows them once. The
+> sanitiser masks only values that match its patterns. Neither change has been seen in
+> a live run log yet.
 
 ---
 
@@ -779,8 +790,8 @@ SKIP into a failure, so a missing tool can never make the run look complete.
 | 5 | Render cloud-init | Renders the template exactly as Terraform would (`build/cloud-init.rendered.yaml`). |
 | 6 | Embedded app files unchanged | The 4 app files inside cloud-init match `./app` byte-for-byte. |
 | 7 | `cloud-init schema` | The rendered cloud-init is valid (SKIP if cloud-init is not installed). |
-| 8 | Script behaviour tests | 139 stub-based cases for every shell script (listed below). |
-| 9 | Workflow security policy tests | `tests/workflows/test_workflow_policy.py`: PR workflows get no Azure access, Azure jobs are main-only with an environment, actions pinned to SHAs, no artifacts, saved plans only, sanitised output, shared concurrency, `shell: bash` (pipefail) proven by injecting a failure into every piped command; also proves it rejects two bad fixtures (SKIP without PyYAML). |
+| 8 | Script behaviour tests | 140 stub-based cases for every shell script (listed below). |
+| 9 | Workflow security policy tests | `tests/workflows/test_workflow_policy.py`: PR workflows get no Azure access, Azure jobs are main-only with an environment, actions pinned to SHAs, no artifacts, saved plans only, sanitised output, Azure identifiers masked by each Azure job's first step, shared concurrency, `shell: bash` (pipefail) proven by injecting a failure into every piped command; also proves it rejects two bad fixtures (SKIP without PyYAML). |
 | 10 | `actionlint` | Workflow syntax and expression checks (SKIP if not installed). |
 | 11 | `shellcheck` | Every shell script and stub (SKIP if shellcheck is not installed). |
 | 12 | Local web service test | 9 Docker checks: `/health` 200 + JSON body, `/` 200 + title, unknown path 404, nginx version hidden, non-root user, read-only root filesystem, `HEALTHCHECK` healthy (SKIP if Docker is unavailable). |
@@ -821,15 +832,24 @@ network. Fixture addresses are documentation-only ranges (RFC 5737:
 | `bootstrap/bootstrap.sh` (15) | Dry run makes no Azure writes; wrong tenant, wrong subscription (exit 1, no writes); not signed in, group check error, missing `--owner-tag` (exit 2); unexpected resources in either target group (exit 1 before any write); `--apply`: storage with shared keys off, public blob access off, TLS 1.2, versioning, blob/container soft delete, private container, lifecycle policy, delete lock; exactly 4 role assignments (Reader / Contributor on the workload group, Blob Data Contributor on the container only), never Owner / User Access Administrator / RBAC Administrator, never at subscription or state-group scope, exactly 3 federated credentials with exact main-branch subjects in GitHub's immutable format (`repo:Shayze01@99360721/atlas-platform-foundation@1457226611:...`), legacy name-only subjects updated in place, correct subjects left unchanged, a wrong issuer or audience repaired, another `--github-repo` without numeric IDs refused (exit 2), no other resource group (or `NetworkWatcherRG`) touched, nothing deleted. |
 | `bootstrap/teardown.sh` (15) | Unsupported state (`{}`, `null`, empty, malformed, missing/wrong-type `resources`, bad `mode`, version 3) and an unexpected `az group exists` answer are inconclusive (exit 2, nothing deleted); dry run deletes nothing; workload resources present, state still tracking resources, wrong subscription (exit 1, nothing deleted); unreadable state (exit 2, nothing deleted); `--apply` deletes in order workload group -> role assignments -> identities -> lock -> state group **last**. |
 | `scripts/github/setup-github.sh` (5) | Dry run changes nothing and never prints secret values; `--apply`: OIDC claims `repo,context,ref` with immutable subjects, read-only token, reviewer only on `azure-deploy`, self-review allowed, all 3 environments main-only, per-environment client IDs, 9 secrets sent on stdin and never logged; not an admin, `0.0.0.0/0`, non-public-key file (exit 2). |
-| `scripts/ci/*` (39) | `plan-summary.sh` policy: compliant plan shows allowlisted details and passes 9 checks; no-change plan still checked; 13 fail-closed cases (open SSH, Internet HTTP, /24 source, temporary rule, no deny, password auth, wrong size, unknown size, unknown source, no shutdown, wrong shutdown time, implicit outbound, no planned values) exit 1 with no outputs. `backend-init.sh`: Entra/OIDC backend config, refuses client secret / access key / missing settings; `plan-summary.sh`: addresses, actions, counts and SHA only (no IPs, keys or custom_data), no-change plan, unreadable plan; `sanitize.sh` masking; `temp-access.sh`: exact /32 rule, refuses 5 unsafe sources without calling Azure, removal confirmed/absent NSG/still present/inconclusive; `runner-ip.sh`: agree, disagree, private, lookup failure; `wait-for-health.sh`. |
+| `scripts/ci/*` (40) | `plan-summary.sh` policy: compliant plan shows allowlisted details and passes 9 checks; no-change plan still checked; 13 fail-closed cases (open SSH, Internet HTTP, /24 source, temporary rule, no deny, password auth, wrong size, unknown size, unknown source, no shutdown, wrong shutdown time, implicit outbound, no planned values) exit 1 with no outputs. `backend-init.sh`: Entra/OIDC backend config, refuses client secret / access key / missing settings; `plan-summary.sh`: addresses, actions, counts and SHA only (no IPs, keys or custom_data), no-change plan, unreadable plan; `sanitize.sh` masking (including truncated GUIDs in Terraform progress lines, with unrelated `...` kept); `temp-access.sh`: exact /32 rule, refuses 5 unsafe sources without calling Azure, removal confirmed/absent NSG/still present/inconclusive; `runner-ip.sh`: agree, disagree, private, lookup failure; `wait-for-health.sh`. |
 
-**Latest offline result (2026-11-14, Milestone 2 branch, `REQUIRE_ALL=1`):**
+**Latest offline result (2026-11-15, after the log-masking change, `REQUIRE_ALL=1`):**
 `validate.sh` **12 passed, 0 failed, 0 skipped**; `terraform test` 17/17; script
-behaviour tests 139/139; workflow policy all passed (including pipefail failure
-injection); local web test 9/9. Raw output:
-[`docs/evidence/offline-validate-2026-11-14-m2-r2.log`](docs/evidence/offline-validate-2026-11-14-m2-r2.log)
-(earlier branch run: 110/110, [`offline-validate-2026-11-14-m2.log`](docs/evidence/offline-validate-2026-11-14-m2.log)).
-No Milestone 2 Azure or GitHub checks have run yet.
+behaviour tests 140/140; workflow policy all passed (including pipefail failure
+injection and the Azure-identifier masking check); local web test 9/9. Raw output:
+[`docs/evidence/offline-validate-2026-11-15-masking.log`](docs/evidence/offline-validate-2026-11-15-masking.log)
+([`docs/validation-log.md`](docs/validation-log.md) section 10, which also lists the
+remaining masking limitations). Offline checks do not contact Azure; the first live
+Milestone 2 run (2026-11-14) is recorded separately in section 9 of that file.
+
+*Previous Milestone 2 offline results (2026-11-14):* 12 passed, 0 failed, 0 skipped;
+script tests 139/139 after the OIDC subject fix
+([`offline-validate-2026-11-14-m2-r3.log`](docs/evidence/offline-validate-2026-11-14-m2-r3.log)),
+134/134 after review fixes
+([`offline-validate-2026-11-14-m2-r2.log`](docs/evidence/offline-validate-2026-11-14-m2-r2.log)),
+110/110 on the first branch run
+([`offline-validate-2026-11-14-m2.log`](docs/evidence/offline-validate-2026-11-14-m2.log)).
 
 *Previous offline result (2026-11-13, after the Azure deployment):* 10 passed,
 0 failed, 0 skipped; `terraform test` 15/15; script tests 60/60
@@ -892,6 +912,11 @@ Full design, trust boundaries, owner setup, recovery and costs:
   spending caps**.
 - **Live status (2026-11-14):** one Deploy run passed end to end (OIDC, approval,
   SHA-checked apply, validation, temporary access removed, destroy). **Not live-tested:**
-  failure cleanup, `destroy.yml` (manual/nightly), auto-shutdown firing, `keep-running`,
-  `teardown.sh`. Costs are estimates pending billing data.
+  failure cleanup, deliberate plan hash-mismatch rejection, `destroy.yml` (manual/nightly),
+  auto-shutdown firing, `keep-running`, `teardown.sh` (full list in
+  [`docs/validation-log.md`](docs/validation-log.md) section 9.2). Costs are estimates
+  pending billing data.
+- **Log masking (2026-11-15, offline-tested only):** Azure identifier variables are masked
+  from each Azure job's second step; the first step's `env:` header still shows them once.
+  `sanitize.sh` also masks truncated GUIDs. See validation-log section 10.
 
