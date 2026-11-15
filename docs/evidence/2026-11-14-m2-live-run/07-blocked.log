@@ -1,0 +1,17 @@
+# Source: GitHub Actions run 43588089749 (Deploy, workflow_dispatch, main @ 4c0674b, after_validation=destroy)
+# Extracted from the public job log: step output only (command echo and env blocks dropped).
+# Additional redaction: GUIDs -> <guid>, IPv4 addresses -> <ip>. GitHub had already masked secrets as ***;
+# sanitize.sh had already replaced IPs, GUIDs and the public key in piped output.
+
+### Step: Confirm runner access is blocked again (2026-11-14 11:19:23Z -> 11:19:48Z)
+== blocked checks for vm-atlas-foundation-dev (<ip>) in rg-atlas-foundation-dev
+    Allow-SSH-From-Admin	Allow	<ip>		22
+    Allow-HTTP-From-Admin	Allow	<ip>		80
+    Deny-Internet-Inbound	Deny	Internet		*
+PASS: NSG has exactly the intended rules (admin <ip> on 22/80, Internet deny) and no temporary rule
+Control: this machine reaches the Internet as <ip>
+PASS: HTTP from this machine no longer connects (connect timed out: dropped, consistent with the NSG deny)
+PASS: TCP 22 from this machine no longer connects (connect timed out after 10s: dropped, consistent with the NSG deny)
+
+RESULT (blocked): 3 passed, 0 failed, 0 inconclusive
+

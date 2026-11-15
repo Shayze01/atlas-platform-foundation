@@ -1,0 +1,16 @@
+# Source: GitHub Actions run 43588089749 (Deploy, workflow_dispatch, main @ 4c0674b, after_validation=destroy)
+# Extracted from the public job log: step output only (command echo and env blocks dropped).
+# Additional redaction: GUIDs -> <guid>, IPv4 addresses -> <ip>. GitHub had already masked secrets as ***;
+# sanitize.sh had already replaced IPs, GUIDs and the public key in piped output.
+
+### Step: Runner public IP (masked) (2026-11-14 11:17:40Z -> 11:17:40Z)
+
+### Step: Temporary /32 access for this runner (2026-11-14 11:17:40Z -> 11:17:48Z)
+Temporary rule Allow-CI-Runner-Temporary added (one /32, TCP 22 and 80)
+
+### Step: Wait for the web service (2026-11-14 11:17:48Z -> 11:18:34Z)
+waiting for /health (last HTTP 000, 0s elapsed)
+waiting for /health (last HTTP 000, 15s elapsed)
+waiting for /health (last HTTP 000, 30s elapsed)
+Web service healthy after 45s
+

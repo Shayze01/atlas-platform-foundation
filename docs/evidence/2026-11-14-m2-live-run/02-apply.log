@@ -1,0 +1,83 @@
+# Source: GitHub Actions run 43588089749 (Deploy, workflow_dispatch, main @ 4c0674b, after_validation=destroy)
+# Extracted from the public job log: step output only (command echo and env blocks dropped).
+# Additional redaction: GUIDs -> <guid>, IPv4 addresses -> <ip>. GitHub had already masked secrets as ***;
+# sanitize.sh had already replaced IPs, GUIDs and the public key in piped output.
+
+### Step: Azure login (OIDC, deploy identity) (2026-11-14 11:16:43Z -> 11:16:49Z)
+Running Azure CLI Login.
+[command]/usr/bin/az cloud set -n azurecloud
+Done setting cloud: "azurecloud"
+Federated token details:
+ issuer - https://token.actions.githubusercontent.com
+ subject claim - repo:Shayze01@99360721/atlas-platform-foundation@1457226611:environment:azure-deploy:ref:refs/heads/main
+ audience - api://AzureADTokenExchange
+ job_workflow_ref - Shayze01/atlas-platform-foundation/.github/workflows/deploy.yml@refs/heads/main
+Attempting Azure CLI login by using OIDC...
+Subscription is set successfully.
+Azure CLI login succeeds by using OIDC.
+
+### Step: Terraform init (remote state, Entra ID) (2026-11-14 11:16:49Z -> 11:16:54Z)
+Initializing the backend...
+
+Successfully configured the backend "azurerm"! Terraform will automatically
+use this backend unless the backend configuration changes.
+Initializing modules...
+- compute in modules/compute
+- networking in modules/networking
+- test.tests.compute.vm_uses_ssh_keys_only in modules/compute
+- test.tests.compute.public_ip_attached_to_nic_for_explicit_outbound in modules/compute
+- test.tests.compute.daily_auto_shutdown_at_0200_uk_time in modules/compute
+- test.tests.compute.auto_shutdown_can_be_disabled in modules/compute
+- test.tests.networking.nsg_allows_only_admin_ip_on_ssh_and_http in modules/networking
+Initializing provider plugins...
+- Reusing previous version of hashicorp/azurerm from the dependency lock file
+- Installing hashicorp/azurerm v5.13.0...
+- Installed hashicorp/azurerm v5.13.0 (signed by HashiCorp)
+
+Terraform has been successfully initialized!
+
+### Step: Fetch the reviewed plan and verify its SHA-256 (2026-11-14 11:16:54Z -> 11:16:58Z)
+tfplan: OK
+
+### Step: Apply exactly the reviewed plan (2026-11-14 11:16:58Z -> 11:17:39Z)
+module.networking.azurerm_network_security_group.workload: Creating...
+module.networking.azurerm_virtual_network.this: Creating...
+module.networking.azurerm_network_security_group.workload: Creation complete after 3s [id=/subscriptions/<guid>/resourceGroups/rg-atlas-foundation-dev/providers/Microsoft.Network/networkSecurityGroups/nsg-atlas-foundation-dev]
+module.networking.azurerm_network_security_rule.deny_internet_inbound: Creating...
+module.networking.azurerm_network_security_rule.allow_ssh_from_admin: Creating...
+module.networking.azurerm_network_security_rule.allow_http_from_admin: Creating...
+module.networking.azurerm_network_security_rule.allow_http_from_admin: Creation complete after 3s [id=/subscriptions/<guid>/resourceGroups/rg-atlas-foundation-dev/providers/Microsoft.Network/networkSecurityGroups/nsg-atlas-foundation-dev/securityRules/Allow-HTTP-From-Admin]
+module.networking.azurerm_virtual_network.this: Creation complete after 6s [id=/subscriptions/<guid>/resourceGroups/rg-atlas-foundation-dev/providers/Microsoft.Network/virtualNetworks/vnet-atlas-foundation-dev]
+module.networking.azurerm_subnet.workload: Creating...
+module.networking.azurerm_network_security_rule.deny_internet_inbound: Creation complete after 3s [id=/subscriptions/<guid>/resourceGroups/rg-atlas-foundation-dev/providers/Microsoft.Network/networkSecurityGroups/nsg-atlas-foundation-dev/securityRules/Deny-Internet-Inbound]
+module.networking.azurerm_network_security_rule.allow_ssh_from_admin: Creation complete after 3s [id=/subscriptions/<guid>/resourceGroups/rg-atlas-foundation-dev/providers/Microsoft.Network/networkSecurityGroups/nsg-atlas-foundation-dev/securityRules/Allow-SSH-From-Admin]
+module.networking.azurerm_subnet.workload: Creation complete after 5s [id=/subscriptions/<guid>/resourceGroups/rg-atlas-foundation-dev/providers/Microsoft.Network/virtualNetworks/vnet-atlas-foundation-dev/subnets/snet-workload]
+module.networking.azurerm_subnet_network_security_group_association.workload: Creating...
+module.networking.azurerm_subnet_network_security_group_association.workload: Creation complete after 6s [id=/subscriptions/<guid>/resourceGroups/rg-atlas-foundation-dev/providers/Microsoft.Network/virtualNetworks/vnet-atlas-foundation-dev/subnets/snet-workload]
+module.compute.azurerm_public_ip.vm: Creating...
+module.compute.azurerm_public_ip.vm: Creation complete after 3s [id=/subscriptions/<guid>/resourceGroups/rg-atlas-foundation-dev/providers/Microsoft.Network/publicIPAddresses/pip-atlas-foundation-dev]
+module.compute.azurerm_network_interface.vm: Creating...
+module.compute.azurerm_network_interface.vm: Creation complete after 2s [id=/subscriptions/<guid>/resourceGroups/rg-atlas-foundation-dev/providers/Microsoft.Network/networkInterfaces/nic-atlas-foundation-dev]
+module.compute.azurerm_linux_virtual_machine.this: Creating...
+module.compute.azurerm_linux_virtual_machine.this: Still creating... [10s elapsed]
+module.compute.azurerm_linux_virtual_machine.this: Creation complete after 13s [id=/subscriptions/<guid>/resourceGroups/rg-atlas-foundation-dev/providers/Microsoft.Compute/virtualMachines/vm-atlas-foundation-dev]
+module.compute.azurerm_dev_test_global_vm_shutdown_schedule.this[0]: Creating...
+module.compute.azurerm_dev_test_global_vm_shutdown_schedule.this[0]: Creation complete after 2s [id=/subscriptions/<guid>/resourceGroups/rg-atlas-foundation-dev/providers/Microsoft.DevTestLab/schedules/shutdown-computevm-vm-atlas-foundation-dev]
+
+Apply complete! Resources: 11 added, 0 changed, 0 destroyed.
+
+Outputs:
+
+auto_shutdown_schedule = {
+  "time" = "0200"
+  "timezone" = "GMT Standard Time"
+}
+health_url = "http://<ip>/health"
+public_ip_address = "<ip>"
+resource_group_name = "rg-atlas-foundation-dev"
+ssh_command = "ssh -i ~/.ssh/atlas_admin atlasadmin@<ip>"
+vm_name = "vm-atlas-foundation-dev"
+web_url = "http://<ip>/"
+
+### Step: Delete the stored plan (2026-11-14 11:17:39Z -> 11:17:40Z)
+

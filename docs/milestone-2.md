@@ -1,8 +1,9 @@
 # Milestone 2 - Deployment engine (GitHub Actions + Azure OIDC + remote state)
 
-Status: **code and offline tests only.** The bootstrap, GitHub setup and workflows
-below have **not** been run against Azure or GitHub yet; nothing in this document is
-deployment evidence. Milestone 1 (local state, manual `terraform apply`) still works
+Status: **first live run passed on 2026-11-14** (bootstrap, GitHub setup, then one Deploy
+run: plan -> approval -> apply -> validation -> destroy). Evidence and the list of paths
+that are still untested (failure cleanup, Destroy workflow, auto-shutdown, teardown):
+[`validation-log.md` section 9](validation-log.md#9-first-live-milestone-2-run-executed-2026-11-14-east-us). Milestone 1 (local state, manual `terraform apply`) still works
 unchanged, and its 2026-11-13 evidence in `docs/evidence/` is untouched.
 
 Long-term direction: a self-service platform for secure, temporary cloud environments.
@@ -161,7 +162,7 @@ Failure paths: the remove step runs even after a failed check; `failure-cleanup`
 The workflows never test **your** key-based SSH login: that needs your private key,
 which stays on your laptop (`scripts/connectivity-check.sh`).
 
-## 5. Owner setup (once; not run yet)
+## 5. Owner setup (once; run 2026-11-14)
 
 Prerequisites: Azure CLI signed in as you (Owner, or Contributor + User Access
 Administrator, on the subscription), GitHub CLI signed in as `Shayze01`, `jq`.
@@ -204,7 +205,7 @@ approve the `azure-deploy` review, and watch validation and teardown.
 | OIDC login fails (`AADSTS70021`, subject mismatch) | Check the run is on `main`, the environment name, and that the OIDC subject template was applied (step 5.3). Compare `gh api repos/Shayze01/atlas-platform-foundation/actions/oidc/customization/sub` (`sub_claim_prefix`) with the federated credential subjects; re-running `bootstrap/bootstrap.sh` updates subjects that differ. |
 | Plan rejected as stale | Something changed state after planning; run Deploy again for a fresh plan. |
 
-## 8. Costs (estimates, not yet measured)
+## 8. Costs (estimates, pending billing data)
 
 Prices: Azure retail list prices fetched 2026-11-13 (GBP, East US, pay-as-you-go,
 excluding VAT; +20% UK VAT shown where relevant). Re-check before deploying.
@@ -226,10 +227,24 @@ GitHub (and is disabled after 60 days without repository activity); failure clea
 can itself fail (e.g. Azure outage, expired permissions). The £5 budget alert only
 notifies. Check Cost Management after every live session.
 
-## 9. Not yet tested
+First live run (2026-11-14): the workload existed for about 5 minutes, so roughly
+£0.001 excluding VAT by these list prices. This is an estimate until Cost Management
+shows the actual charge.
 
-- No part of the bootstrap, GitHub setup or workflows has run against real Azure or
-  GitHub; the OIDC token being accepted by Azure, role sufficiency (e.g. Reader for planning, Run
-  Command with Contributor), storage lifecycle filters and environment approval flow
-  are verified only by reading documentation and by stubbed tests.
-- `ci.yml` will run for the first time on this pull request.
+## 9. Live-tested and not yet tested
+
+Live-tested on 2026-11-14 (run 43588089749): bootstrap and GitHub setup applied by the
+owner; OIDC login for the plan and deploy identities with immutable subjects; Entra-only
+remote state; Reader sufficient for the first plan; 9/9 policy checks; owner approval;
+SHA-256-checked apply; temporary runner `/32`; public, in-VM (Run Command under
+Contributor) and blocked checks; destroy with the workload group kept; `ci.yml` on pull
+requests. Details: `validation-log.md` section 9.
+
+Not yet tested live:
+- failure cleanup after a failed or cancelled apply;
+- `destroy.yml` (manual and nightly) and the `azure-destroy` federated credential;
+- the 02:00 UK auto-shutdown actually firing;
+- `keep-running`, shared-concurrency blocking, state-lock and version/soft-delete recovery,
+  lifecycle expiry;
+- planning against existing resources with Reader;
+- `bootstrap/teardown.sh`.
