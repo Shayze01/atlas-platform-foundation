@@ -112,6 +112,10 @@ Raw plans, state, tfvars, credentials and personal IPs are not published:
   (the policy test injects a failure into every piped command to prove it).
 - Admin IP, SSH public key and owner tag are **environment secrets**, so GitHub masks
   them. The runner's own IP is masked with `::add-mask::` before use.
+- Tenant, subscription and client IDs and the storage account name are variables, not
+  secrets. The first step of every Azure job registers them with `::add-mask::`, so
+  later steps show `***`. That first step's own `env:` header still shows them once
+  (GitHub prints it before any step runs); they are identifiers, not credentials.
 - Every Terraform/validation step pipes through `scripts/ci/sanitize.sh`, which masks
   IPv4 addresses, GUIDs (subscription/tenant/object IDs), SSH keys, key fingerprints
   and SAS signatures.

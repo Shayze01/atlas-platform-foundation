@@ -24,6 +24,7 @@ import yaml
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 SHA = re.compile(r"^[^@\s]+@[0-9a-f]{40}$")
 TRUSTED_AZURE_TRIGGERS = {"workflow_dispatch", "schedule"}
+MASKED_VARS = ("ARM_TENANT_ID", "ARM_SUBSCRIPTION_ID", "ARM_CLIENT_ID", "TFSTATE_STORAGE_ACCOUNT")
 SANITISED = re.compile(r"(terraform (init|apply|destroy|plan)|backend-init\.sh|azure-validate\.sh|verify-cleanup\.sh|temp-access\.sh remove)")
 
 
@@ -81,6 +82,9 @@ def check(path):
                 v.append(f"{where}: Azure job without an environment")
             if "github.ref == 'refs/heads/main'" not in str(job.get("if", "")):
                 v.append(f"{where}: Azure job without a main-branch guard")
+            first = (steps[0].get("run") or "") if steps else ""
+            if "::add-mask::" not in first or not all(f"${{{var}}}" in first for var in MASKED_VARS):
+                v.append(f"{where}: Azure identifiers are not masked by the first step ({', '.join(MASKED_VARS)})")
         for i, step in enumerate(steps):
             sw = f"{where} step {i + 1}"
             uses = step.get("uses")
@@ -229,13 +233,29 @@ def main():
         print(("PASS" if ok else "FAIL") + f": {wf_name}:{job_id} destroy and cleanup verification run with if: always()")
         failures += 0 if ok else 1
 
+    # The mask step must register every non-empty identifier and tolerate an empty one.
+    ids = {"ARM_TENANT_ID": "11111111-1111-1111-1111-111111111111", "ARM_SUBSCRIPTION_ID": "22222222-2222-2222-2222-222222222222",
+           "ARM_CLIENT_ID": "", "TFSTATE_STORAGE_ACCOUNT": "stexample123"}
+    for wf_name, doc in docs.items():
+        for job_id, job in (doc.get("jobs") or {}).items():
+            if not perms_grant_id_token(job.get("permissions")):
+                continue
+            run = ((job.get("steps") or [{}])[0].get("run") or "")
+            res = subprocess.run(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", run],
+                                 env=dict(os.environ, **ids), capture_output=True, text=True)
+            want = [f"::add-mask::{val}" for val in ids.values() if val]
+            ok = res.returncode == 0 and res.stdout.split() == want
+            print(("PASS" if ok else "FAIL") + f": {wf_name}:{job_id} first step masks the Azure identifiers (empty values skipped)")
+            failures += 0 if ok else 1
+
     # The checker must reject known-bad workflows.
     expected = {
         "bad-pr-azure.yml": ["pull-request workflow references secrets", "pull-request job has id-token", "action not pinned",
                              "defaults.run.shell must be bash"],
         "bad-unsafe-deploy.yml": ["forbidden trigger pull_request_target", "Azure job without a main-branch guard",
                                   "Azure job without an environment", "terraform apply must apply the saved",
-                                  "artifacts are not allowed", "checkout must set persist-credentials", "not piped through"],
+                                  "artifacts are not allowed", "checkout must set persist-credentials", "not piped through",
+                                  "Azure identifiers are not masked"],
     }
     for fx, needles in expected.items():
         problems = "\n".join(check(os.path.join(ROOT, "tests", "workflows", "fixtures", fx)))
