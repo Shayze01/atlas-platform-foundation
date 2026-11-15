@@ -477,3 +477,27 @@ Raw output: [`evidence/offline-validate-2026-11-15-masking.log`](evidence/offlin
 - `sanitize.sh` is pattern-based: it masks only values piped through it that match its
   patterns (IPv4, full or truncated GUIDs, SSH keys/fingerprints, SAS signatures).
 - Not yet verified live: the masking first appears in the next real Deploy or Destroy run log.
+
+## 11. Milestone 3 Stage 1: ticket app, container and local tests (executed 2026-11-15, offline)
+
+**Scope:** the healthy Atlas Service Desk demo app (`tickets-app/`: Flask + Gunicorn,
+SQLite, fictional data only), its Docker image, and local tests. Terraform, cloud-init,
+`app/` (the Milestone 2 page) and all workflows are unchanged. Nothing was deployed to
+Azure. See [`tickets-app/README.md`](../tickets-app/README.md).
+
+Raw output: [`evidence/offline-validate-2026-11-15-m3-stage1.log`](evidence/offline-validate-2026-11-15-m3-stage1.log).
+
+### Summary: 13 passed, 0 failed, 0 skipped (`REQUIRE_ALL=1`, exit 0)
+
+| Check | Result |
+| --- | --- |
+| Existing 12 checks (Terraform, cloud-init, script tests 140/140, workflow policy, actionlint, ShellCheck, Milestone 2 web test 9/9) | PASS, unchanged |
+| New: ticket app (`scripts/test-tickets-local.sh`) | PASS - unit tests 13/13 inside the image (incl. write lock taken before reading on update); 10 container/hardening checks; independent API flow check (exit 0); Playwright/Chromium browser check (exit 0; includes no horizontal overflow at 375px and a visible error for an overlong title); data kept across restart and deleted with the volume; Docker healthcheck healthy |
+
+### Not covered by Stage 1
+
+- The deliberately broken variant and the test-the-test (Stage 2).
+- Azure deployment, image registry, digest pinning on the VM, expiry, cleanup and the
+  live tests (Stages 3-7).
+- Browsers other than Chromium; load or concurrent users; accessibility beyond basic
+  labels.

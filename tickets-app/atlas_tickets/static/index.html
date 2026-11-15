@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Atlas Service Desk (demo)</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <div id="env-banner" class="env-banner" role="status" data-testid="env-banner">Loading environment details...</div>
+  <header class="topbar">
+    <a href="#/" class="brand"><span class="logo" aria-hidden="true">A</span> Atlas Service Desk <span class="tag">demo</span></a>
+    <nav>
+      <a href="#/" class="nav-link">Tickets</a>
+      <a href="#/new" class="btn btn-primary" data-testid="new-ticket-link">New ticket</a>
+    </nav>
+  </header>
+
+  <main id="view" class="container" aria-live="polite"></main>
+
+  <template id="tpl-list">
+    <section class="panel">
+      <div class="panel-head">
+        <h1>Tickets</h1>
+        <div class="filters">
+          <label>Status
+            <select id="filter-status" data-testid="filter-status">
+              <option value="">All</option>
+              <option>Open</option><option>In progress</option><option>Resolved</option><option>Closed</option>
+            </select>
+          </label>
+          <label>Priority
+            <select id="filter-priority" data-testid="filter-priority">
+              <option value="">All</option>
+              <option>Low</option><option>Medium</option><option>High</option><option>Critical</option>
+            </select>
+          </label>
+        </div>
+      </div>
+      <div class="stats" id="stats"></div>
+      <div class="table-wrap">
+      <table class="tickets" data-testid="ticket-table">
+        <thead><tr><th>Ref</th><th>Title</th><th>Requester</th><th>Priority</th><th>Status</th><th>Updated (UTC)</th></tr></thead>
+        <tbody id="ticket-rows"></tbody>
+      </table>
+      </div>
+      <p id="empty" class="muted hidden">No tickets match these filters.</p>
+    </section>
+  </template>
+
+  <template id="tpl-new">
+    <section class="panel narrow">
+      <h1>New ticket</h1>
+      <p class="muted">Use fictional details only. This demo is not connected to any real system.</p>
+      <form id="new-form" novalidate>
+        <label>Title<input name="title" required minlength="3" data-testid="title"></label>
+        <label>Requester<input name="requester" required minlength="2" placeholder="e.g. Sam Example" data-testid="requester"></label>
+        <label>Priority
+          <select name="priority" data-testid="priority">
+            <option>Low</option><option selected>Medium</option><option>High</option><option>Critical</option>
+          </select>
+        </label>
+        <label>Description<textarea name="description" rows="5" data-testid="description"></textarea></label>
+        <p id="form-error" class="error hidden" role="alert" data-testid="form-error"></p>
+        <div class="actions">
+          <a href="#/" class="btn">Cancel</a>
+          <button type="submit" class="btn btn-primary" data-testid="create-ticket">Create ticket</button>
+        </div>
+      </form>
+    </section>
+  </template>
+
+  <template id="tpl-detail">
+    <section class="panel narrow">
+      <a href="#/" class="back">&larr; All tickets</a>
+      <div class="detail-head">
+        <h1><span id="d-ref" class="ref" data-testid="detail-ref"></span> <span id="d-title" data-testid="detail-title"></span></h1>
+        <div class="badges"><span id="d-priority" class="badge" data-testid="detail-priority"></span><span id="d-status" class="badge" data-testid="detail-status"></span></div>
+      </div>
+      <dl class="meta">
+        <dt>Requester</dt><dd id="d-requester"></dd>
+        <dt>Created (UTC)</dt><dd id="d-created"></dd>
+        <dt>Updated (UTC)</dt><dd id="d-updated"></dd>
+      </dl>
+      <p id="d-description" class="description"></p>
+      <form id="update-form" class="update-form">
+        <label>Status
+          <select name="status" id="u-status" data-testid="update-status">
+            <option>Open</option><option>In progress</option><option>Resolved</option><option>Closed</option>
+          </select>
+        </label>
+        <label>Priority
+          <select name="priority" id="u-priority" data-testid="update-priority">
+            <option>Low</option><option>Medium</option><option>High</option><option>Critical</option>
+          </select>
+        </label>
+        <button type="submit" class="btn btn-primary" data-testid="save-ticket">Save changes</button>
+        <span id="u-msg" class="muted" role="status" data-testid="save-message"></span>
+      </form>
+      <h2>Activity</h2>
+      <ol id="d-history" class="history" data-testid="history"></ol>
+    </section>
+  </template>
+
+  <footer class="footer">
+    Fictional demo data only &middot; Not connected to any real organisation or system &middot;
+    <span id="version" data-testid="version"></span>
+  </footer>
+</body>
+</html>
