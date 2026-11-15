@@ -1,0 +1,20 @@
+# Source: GitHub Actions run 43588089749 (Deploy, workflow_dispatch, main @ 4c0674b, after_validation=destroy)
+# Extracted from the public job log: step output only (command echo and env blocks dropped).
+# Additional redaction: GUIDs -> <guid>, IPv4 addresses -> <ip>. GitHub had already masked secrets as ***;
+# sanitize.sh had already replaced IPs, GUIDs and the public key in piped output.
+
+### Step: In-VM checks (Azure Run Command) (2026-11-14 11:18:39Z -> 11:19:18Z)
+== in-vm checks for vm-atlas-foundation-dev (<ip>) in rg-atlas-foundation-dev
+PASS: in-VM: cloud-init finished (CLOUD_INIT=status: done)
+PASS: in-VM: container atlas-web healthy (CONTAINER_HEALTH=healthy)
+PASS: in-VM: local /health returns HTTP 200 (LOCAL_HEALTH_CODE=200)
+PASS: in-VM: local /health body contains "status":"ok"
+PASS: in-VM: effective sshd: password authentication disabled (SSHD_passwordauthentication=no)
+PASS: in-VM: effective sshd: keyboard-interactive disabled (SSHD_kbdinteractiveauthentication=no)
+PASS: in-VM: effective sshd: root login disabled (SSHD_permitrootlogin=no)
+PASS: in-VM: effective sshd: public-key authentication enabled (SSHD_pubkeyauthentication=yes)
+PASS: in-VM: administrator public key SHA256:<fingerprint> is in authorized_keys
+PASS: in-VM: outbound traffic leaves via the NIC's Standard public IP (OUTBOUND_IP=<ip>)
+
+RESULT (in-vm): 10 passed, 0 failed, 0 inconclusive
+
