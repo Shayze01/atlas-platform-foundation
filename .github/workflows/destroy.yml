@@ -52,6 +52,13 @@ jobs:
       TF_VAR_admin_ssh_public_key: ${{ secrets.ADMIN_SSH_PUBLIC_KEY }}
       TF_VAR_owner: ${{ secrets.OWNER_TAG }}
     steps:
+      - name: Mask Azure identifiers for the rest of this job
+        # Tenant, subscription and client IDs and the storage account are variables, not
+        # secrets, so GitHub would print them in every later step's env block.
+        run: |
+          for v in "${ARM_TENANT_ID}" "${ARM_SUBSCRIPTION_ID}" "${ARM_CLIENT_ID}" "${TFSTATE_STORAGE_ACCOUNT}"; do
+            if [[ -n "${v}" ]]; then echo "::add-mask::${v}"; fi
+          done
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false

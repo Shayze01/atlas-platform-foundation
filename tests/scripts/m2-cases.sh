@@ -258,6 +258,13 @@ OUT="$(printf '%s\n' "${SAN_IN}" | "${ROOT}/scripts/ci/sanitize.sh")"
 has "ip <ip> and <ip>,<ip>;"; has "/subscriptions/<guid>/x"; has "ssh-ed25519 <public-key> k"; has "SHA256:<fingerprint>"
 has "nginx 1.30.2"; has "sig=<redacted>"; lacks "52\\.142"; lacks "${S}"; done_case
 
+# Shape of Terraform's progress lines in run 43588089749 (subscription ID truncated mid-GUID).
+SAN_T="Still destroying... [id=/subscriptions/${S:0:24}...irtualMachines/vm-a, 10s elapsed]; [id=/subscriptions/${S:0:5}...roups/rg-a]; ${S:0:13}-22...x; Still creating... [10s elapsed]; deadbeef... v1.2.3..."
+cases=$((cases + 1)); current_ok=true; NAME="sanitize: masks truncated GUIDs in Terraform progress lines; keeps other ellipses"
+OUT="$(printf '%s\n' "${SAN_T}" | "${ROOT}/scripts/ci/sanitize.sh")"
+has "\\[id=/subscriptions/<guid>\\.\\.\\.irtualMachines/vm-a, 10s elapsed\\]"; has "\\[id=/subscriptions/<guid>\\.\\.\\.roups/rg-a\\]"
+has "; <guid>\\.\\.\\.x;"; has "Still creating\\.\\.\\. \\[10s elapsed\\]"; has "deadbeef\\.\\.\\. v1\\.2\\.3\\.\\.\\."; lacks "${S:0:5}"; done_case
+
 run_case "temp-access add: exactly one /32 on TCP 22 and 80 -> exit 0" 0 ci/temp-access.sh PATH="${M2PATH}" -- add 198.51.100.7/32
 log_has "network nsg rule create .*--name Allow-CI-Runner-Temporary --priority 130 .*--access Allow --protocol Tcp --source-address-prefixes 198.51.100.7/32 .*--destination-port-ranges 22 80"
 done_case

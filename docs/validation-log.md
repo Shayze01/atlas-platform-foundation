@@ -437,3 +437,43 @@ disk is roughly £0.001 excluding VAT (under £0.01 including VAT). The persiste
 bootstrap resources are estimated at well under £0.01/month. Not yet confirmed against
 Azure Cost Management, which reports with a delay.
 
+
+## 10. Log-masking hardening after the first live run (executed 2026-11-15, offline)
+
+**Why:** the public job log of run 43588089749 (section 9) showed Azure identifiers that
+the evidence files had to redact by hand. These are identifiers, not credentials:
+- Terraform's `Still destroying... [id=/subscriptions/xxxxxxxx-...]` progress lines show a
+  truncated subscription ID, which `scripts/ci/sanitize.sh` missed because it only matched
+  complete GUIDs.
+- The tenant, subscription and client IDs and the storage account name are GitHub
+  *variables*, not secrets, so they appeared in every step's `env:` block.
+
+**Changes:**
+- `sanitize.sh` masks truncated GUIDs (`<guid>...`) and truncated `/subscriptions/` prefixes.
+  Run over the recorded live apply log, 0 `Still destroying` lines keep the raw prefix.
+- The first step of every Azure job (`plan`, `apply`, `failure-cleanup`, `destroy`)
+  registers `ARM_TENANT_ID`, `ARM_SUBSCRIPTION_ID`, `ARM_CLIENT_ID` and
+  `TFSTATE_STORAGE_ACCOUNT` with `::add-mask::`, skipping empty values.
+
+No Azure deployment was run for this change.
+Raw output: [`evidence/offline-validate-2026-11-15-masking.log`](evidence/offline-validate-2026-11-15-masking.log).
+
+### Summary: 12 passed, 0 failed, 0 skipped (`REQUIRE_ALL=1`, exit 0)
+
+| Check | Result |
+| --- | --- |
+| `terraform test` | PASS - 17/17 |
+| Script behaviour tests | PASS - 140/140 (1 new: truncated GUIDs in Terraform progress lines masked, unrelated ellipses kept; fails against the previous `sanitize.sh`, 139/140) |
+| Workflow security policy tests | PASS (new: every Azure job's first step masks all four identifiers; an empty value is skipped, not registered as a bare `::add-mask::`) |
+| actionlint, ShellCheck | PASS |
+| Local web service test (Docker) | PASS - 9/9 |
+
+### Remaining limitation
+
+- GitHub prints a step's `env:` header before the step runs, so the first (masking) step
+  of each Azure job still shows the four identifiers once in clear. Every later step shows
+  `***`. Removing that last occurrence would mean storing them as secrets, which changes
+  `setup-github.sh` and the owner's GitHub configuration. It was not done.
+- `sanitize.sh` is pattern-based: it masks only values piped through it that match its
+  patterns (IPv4, full or truncated GUIDs, SSH keys/fingerprints, SAS signatures).
+- Not yet verified live: the masking first appears in the next real Deploy or Destroy run log.
