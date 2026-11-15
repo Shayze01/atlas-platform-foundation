@@ -61,10 +61,10 @@ PASS: /opt/atlas/app/index.html matches app/index.html
 PASS: /opt/atlas/app/run-container.sh matches app/run-container.sh
 
 ==> cloud-init schema validation
-2026-11-15 13:34:54,864 - sources[WARNING]: failed loading pickle in /var/lib/cloud/instance/obj.pkl: [Errno 13] Permission denied: '/var/lib/cloud/instance/obj.pkl'
-2026-11-15 13:34:54,866 - log_util.py[WARNING]: Failed pickling datasource to /var/lib/cloud/instance/obj.pkl
-2026-11-15 13:34:54,867 - log_util.py[WARNING]: Getting data from <class 'cloudinit.sources.DataSourceNone.DataSourceNone'> failed
-2026-11-15 13:34:54,874 - schema.py[WARNING]: datasource not detected, using default instance-data/user-data paths.
+2026-11-15 13:37:29,910 - sources[WARNING]: failed loading pickle in /var/lib/cloud/instance/obj.pkl: [Errno 13] Permission denied: '/var/lib/cloud/instance/obj.pkl'
+2026-11-15 13:37:29,912 - log_util.py[WARNING]: Failed pickling datasource to /var/lib/cloud/instance/obj.pkl
+2026-11-15 13:37:29,913 - log_util.py[WARNING]: Getting data from <class 'cloudinit.sources.DataSourceNone.DataSourceNone'> failed
+2026-11-15 13:37:29,921 - schema.py[WARNING]: datasource not detected, using default instance-data/user-data paths.
 Valid schema build/cloud-init.rendered.yaml
 
 ==> Script behaviour tests (stubbed az/terraform/curl/ssh, no network)
@@ -270,16 +270,16 @@ All local web service checks passed.
 ==> Ticket app: unit, API flow and browser tests (Docker)
 Building atlas-tickets:local-test and atlas-tickets-ui-test:local (log: build/test-tickets-local.log) ...
 == Unit tests (inside the image)
-............
+.............
 ----------------------------------------------------------------------
-Ran 12 tests in 0.076s
+Ran 13 tests in 0.080s
 
 OK
 PASS: unit tests pass
 == Container
 PASS: /health returns ok
 PASS: /version reports variant healthy
-PASS: /version reports revision ab2df27a1bb4
+PASS: /version reports revision f3374106d1f4
 PASS: image label atlas.variant=healthy (got healthy)
 PASS: container runs as non-root (uid 10001)
 PASS: root filesystem is read-only

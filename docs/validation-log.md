@@ -492,7 +492,7 @@ Raw output: [`evidence/offline-validate-2026-11-15-m3-stage1.log`](evidence/offl
 | Check | Result |
 | --- | --- |
 | Existing 12 checks (Terraform, cloud-init, script tests 140/140, workflow policy, actionlint, ShellCheck, Milestone 2 web test 9/9) | PASS, unchanged |
-| New: ticket app (`scripts/test-tickets-local.sh`) | PASS - unit tests 12/12 inside the image; 10 container/hardening checks; independent API flow check (exit 0); Playwright/Chromium browser check (exit 0); data kept across restart and deleted with the volume; Docker healthcheck healthy |
+| New: ticket app (`scripts/test-tickets-local.sh`) | PASS - unit tests 13/13 inside the image (incl. write lock taken before reading on update); 10 container/hardening checks; independent API flow check (exit 0); Playwright/Chromium browser check (exit 0); data kept across restart and deleted with the volume; Docker healthcheck healthy |
 
 ### Not covered by Stage 1
 

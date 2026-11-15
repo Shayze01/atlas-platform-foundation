@@ -5,6 +5,7 @@ Run inside the app image so the exact pinned dependencies are used:
     python -m unittest discover -s /tests -v
 """
 import os
+import sqlite3
 import tempfile
 import unittest
 
@@ -56,6 +57,16 @@ class TicketApiTests(unittest.TestCase):
         changes = [(h["field"], h["old_value"], h["new_value"]) for h in saved["history"]]
         self.assertIn(("status", "Open", "In progress"), changes)
         self.assertIn(("priority", "High", "Critical"), changes)
+
+    def test_update_holds_write_lock_before_reading(self):
+        path = self.client.application.config["DB_PATH"]
+        tid = self.create().get_json()["id"]
+        with db.connect(path) as first:
+            db.update_ticket(first, tid, {"status": "Open"})  # no change: lock must still be held
+            with db.connect(path) as second:
+                second.execute("PRAGMA busy_timeout = 0")
+                with self.assertRaises(sqlite3.OperationalError):
+                    second.execute("BEGIN IMMEDIATE")
 
     def test_unchanged_value_adds_no_history(self):
         tid = self.create().get_json()["id"]

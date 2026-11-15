@@ -112,6 +112,10 @@ def create_ticket(c, title, description, requester, priority):
 
 
 def update_ticket(c, ticket_id, changes):
+    # Take the write lock before reading, so concurrent workers cannot both record
+    # the same stale "old" value in the history.
+    if not c.in_transaction:
+        c.execute("BEGIN IMMEDIATE")
     current = get_ticket(c, ticket_id)
     if current is None:
         return None
