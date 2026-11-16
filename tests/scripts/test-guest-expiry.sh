@@ -27,6 +27,7 @@ note() { ok=false; echo "    - $1"; }
 called()     { grep -qE -- "$1" "${STUB_LOG}" || note "expected call /$1/"; }
 not_called() { if grep -qE -- "$1" "${STUB_LOG}"; then note "unexpected call /$1/"; fi; }
 has()        { grep -qE -- "$1" <<<"${OUT}" || note "output missing /$1/"; }
+lacks_out()  { if grep -qE -- "$1" <<<"${OUT}"; then note "output unexpectedly matches /$1/"; fi; }
 done_case() {
   if [[ "${ok}" == true ]]; then echo "PASS: ${NAME}"; else
     echo "FAIL: ${NAME}"; sed 's/^/      | /' "${STUB_LOG}"; printf '      | %s\n' "${OUT}"; failures=$((failures + 1)); fi
@@ -67,9 +68,27 @@ not_called "^docker"; done_case
 run_guest "pulled image lacks the planned digest -> not run" 1 run-tickets.sh "${IMG}" "${FUTURE}" DOCKER_DIGEST_SCENARIO=mismatch
 has "does not carry the planned digest"; not_called "^docker run"; done_case
 
-run_guest "guest app stop (timer): stops app, deletes data, never touches Azure" 0 atlas-expire.sh "${IMG}" "${PAST}"
-called "^docker rm -f atlas-tickets$"; called "^docker volume rm -f atlas-tickets-data$"; not_called "^(az|terraform) "
-has "Azure resources are NOT deleted"; done_case
+run_guest "guest app stop (timer): removes, verifies absence, never touches Azure" 0 atlas-expire.sh "${IMG}" "${PAST}"
+called "^docker rm -f atlas-tickets$"; called "^docker volume rm -f atlas-tickets-data$"
+called "^docker container inspect atlas-tickets$"; called "^docker volume inspect atlas-tickets-data$"; not_called "^(az|terraform) "
+has "verified absent; Azure resources are NOT deleted"; [[ -s "${WORK}/state/expired" ]] || note "marker missing"; done_case
+
+run_guest "guest app stop: already absent -> success after verification" 0 atlas-expire.sh "${IMG}" "${PAST}" DOCKER_EXPIRE_SCENARIO=absent
+has "No such container"; has "verified absent"; [[ -s "${WORK}/state/expired" ]] || note "marker missing"; done_case
+
+run_guest "guest app stop: container removal fails and it remains -> exit 1, no success" 1 atlas-expire.sh "${IMG}" "${PAST}" DOCKER_EXPIRE_SCENARIO=rm-fail
+has "FAIL - container atlas-tickets still exists"; has "NOT verified"; lacks_out "verified absent"
+[[ ! -e "${WORK}/state/expired" ]] || note "marker written despite failure"; done_case
+
+run_guest "guest app stop: volume removal fails and it remains -> exit 1" 1 atlas-expire.sh "${IMG}" "${PAST}" DOCKER_EXPIRE_SCENARIO=volume-stuck
+has "volume is in use"; has "FAIL - volume atlas-tickets-data still exists"; lacks_out "verified absent"; done_case
+
+run_guest "guest app stop: Docker unreachable -> cannot verify, exit 1" 1 atlas-expire.sh "${IMG}" "${PAST}" DOCKER_EXPIRE_SCENARIO=daemon-down
+has "cannot verify container atlas-tickets is absent"; has "cannot verify volume"; lacks_out "verified absent"
+[[ ! -e "${WORK}/state/expired" ]] || note "marker written despite failure"; done_case
+
+run_guest "boot after expiry with a failed removal -> app service fails (exit 1)" 1 run-tickets.sh "${IMG}" "${PAST}" DOCKER_EXPIRE_SCENARIO=rm-fail
+not_called "^docker (pull|run)"; has "NOT verified"; done_case
 
 echo; echo "Guest expiry tests: $((cases - failures))/${cases} passed"
 (( failures == 0 ))
