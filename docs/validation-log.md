@@ -549,11 +549,11 @@ Raw output: [`evidence/offline-validate-2026-11-16-m3-stage4.log`](evidence/offl
 
 | Owner requirement (2026-11-16) | Test | Result |
 | --- | --- | --- |
-| 1. Full safety margin; recheck before the window; never shorten it | `tests/lifetime/test_lifetime.py` (95 min left passes, 94 refused; window at exactly 60 min passes, 59 refused; no "shortened" output) | 18/18 |
+| 1. Full safety margin; recheck before the window; never shorten it | `tests/lifetime/test_lifetime.py` (95 min left passes, 94 refused; window at exactly 60 min passes, 59 refused; no "shortened" output; start inside 03:20-03:30 UTC refused) | 19/19 (18/18 in the Stage 4 log) |
 | 2. 02:00 UK auto-shutdown and 03:30 UTC Destroy with time-zone conversion | same file: GMT 02:00 UTC vs BST 01:00 UTC at the same clock time, spring-forward and autumn-back nights, 03:20 UTC guard, constants match `variables.tf` and the cron | included above |
-| 3. Carriers/mapping, protect on uncertainty | `tests/expiry/test_guarded_destroy.py`: every revision 2 section 6.3 row incl. state lock; destroy only on DESTROY; no call to the backend, identities or group delete | 22/22 |
+| 3. Carriers/mapping, protect on uncertainty | `tests/expiry/test_guarded_destroy.py`: every revision 2 section 6.3 row incl. state lock; destroy only on DESTROY; no call to the backend, identities or group delete; an equal ExpiresAt without an apply attempt is protected | 23/23 (22/22 in the Stage 4 log) |
 | 4. Stopped before apply vs apply attempted; rejected plan keeps a pre-existing unexpired environment | `test_rejected_plan_never_destroys_a_preexisting_unexpired_environment` (+ NOOP, own-expiry, attempted, uncertain cases); workflow policy enforces marker/gate order and catches a mutated unconditional destroy | PASS |
-| Separate application/cleanup results | `tests/expiry/test_run_report.py` | 11/11 |
+| Separate application/cleanup results | `tests/expiry/test_run_report.py` (incl. failed deployment check with passing tests = FAILED) | 12/12 (11/11 in the Stage 4 log) |
 | Image build and inspection window scripts | `tests/scripts/test-ci-helpers.sh` (stub docker, fake clock) | 11/11 |
 | Private URL, no `continue-on-error`, packages scope, gate/window order, guarded cleanup wiring | workflow policy tests (13 new rules + 2 controls) | PASS |
 
