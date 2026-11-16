@@ -1,0 +1,542 @@
+
+==> terraform fmt -check -recursive
+
+==> terraform init -backend=false
+Initializing modules...
+Initializing provider plugins...
+- Reusing previous version of hashicorp/azurerm from the dependency lock file
+- Using previously-installed hashicorp/azurerm v5.13.0
+
+Terraform has been successfully initialized!
+
+You may now begin working with Terraform. Try running "terraform plan" to see
+any changes that are required for your infrastructure. All Terraform commands
+should now work.
+
+If you ever set or change modules or backend configuration for Terraform,
+rerun this command to reinitialize your working directory. If you forget, other
+commands will detect it and remind you to do so if necessary.
+
+==> terraform validate
+Success! The configuration is valid.
+
+
+==> terraform test (mocked provider, no Azure calls)
+tests/compute.tftest.hcl... in progress
+  run "vm_uses_ssh_keys_only"... pass
+  run "public_ip_attached_to_nic_for_explicit_outbound"... pass
+  run "daily_auto_shutdown_at_0200_uk_time"... pass
+  run "auto_shutdown_can_be_disabled"... pass
+tests/compute.tftest.hcl... tearing down
+tests/compute.tftest.hcl... pass
+tests/networking.tftest.hcl... in progress
+  run "nsg_allows_only_admin_ip_on_ssh_and_http"... pass
+tests/networking.tftest.hcl... tearing down
+tests/networking.tftest.hcl... pass
+tests/root.tftest.hcl... in progress
+  run "plan_with_valid_inputs"... pass
+  run "rejects_internet_wide_source"... pass
+  run "rejects_ip_range_wider_than_32"... pass
+  run "rejects_ip_without_prefix"... pass
+  run "rejects_private_key"... pass
+  run "rejects_reserved_admin_username"... pass
+  run "no_temporary_test_rule_by_default"... pass
+  run "temporary_test_rule_only_allows_listed_32s"... pass
+  run "rejects_test_source_wider_than_32"... pass
+  run "rejects_invalid_auto_shutdown_time"... pass
+  run "creates_resource_group_by_default"... pass
+  run "uses_existing_resource_group_when_not_creating"... pass
+  run "rejects_image_tag_instead_of_digest"... pass
+  run "rejects_image_from_another_namespace"... pass
+  run "rejects_short_digest"... pass
+  run "rejects_unknown_variant"... pass
+  run "rejects_expiry_with_offset"... pass
+  run "rejects_impossible_expiry_date"... pass
+tests/root.tftest.hcl... tearing down
+tests/root.tftest.hcl... pass
+
+Success! 23 passed, 0 failed.
+
+==> Render cloud-init
+Rendered: build/cloud-init.rendered.yaml
+
+==> Rendered cloud-init: exact image digest, expiry timer, embedded scripts
+PASS: /opt/atlas/run-tickets.sh matches cloud-init/files/run-tickets.sh
+PASS: /opt/atlas/atlas-expire.sh matches cloud-init/files/atlas-expire.sh
+PASS: env file pins the planned image digest
+PASS: env file carries the planned expiry
+PASS: expiry timer fires at expires_at in UTC
+PASS: expiry timer catches up at boot if the expiry passed while stopped
+PASS: app service runs the boot-time expiry check before starting
+PASS: timer and app service enabled
+PASS: no image build or mutable tag on the VM
+PASS: rendered cloud-init is 5732 bytes (< 32 KiB, Azure limit 64 KiB)
+
+==> cloud-init schema validation
+2026-11-16 21:22:46,499 - sources[WARNING]: failed loading pickle in /var/lib/cloud/instance/obj.pkl: [Errno 13] Permission denied: '/var/lib/cloud/instance/obj.pkl'
+2026-11-16 21:22:46,502 - log_util.py[WARNING]: Failed pickling datasource to /var/lib/cloud/instance/obj.pkl
+2026-11-16 21:22:46,502 - log_util.py[WARNING]: Getting data from <class 'cloudinit.sources.DataSourceNone.DataSourceNone'> failed
+2026-11-16 21:22:46,512 - schema.py[WARNING]: datasource not detected, using default instance-data/user-data paths.
+Valid schema build/cloud-init.rendered.yaml
+
+==> Expiry-tag carriers and state-to-Azure mapping tests
+test_exit_codes (__main__.Cli) ... ok
+test_azure_id_case_differences_are_tolerated (__main__.FullDeployment) ... ok
+test_azure_list_unreadable (__main__.FullDeployment) ... ok
+test_children_map_to_their_parent_carrier (__main__.FullDeployment) ... ok
+test_complete_deployment_is_fully_explained (__main__.FullDeployment) ... ok
+test_conflicting_tags (__main__.FullDeployment) ... ok
+test_empty_state_and_empty_group (__main__.FullDeployment) ... ok
+test_empty_state_but_resources_in_group (__main__.FullDeployment) ... ok
+test_malformed_tags (__main__.FullDeployment) ... ok
+test_missing_tag (__main__.FullDeployment) ... ok
+test_os_disk_missing_from_azure (__main__.FullDeployment) ... ok
+test_resource_group_in_state_is_never_accepted (__main__.FullDeployment) ... ok
+test_resource_in_azure_not_in_state (__main__.FullDeployment) ... ok
+test_resource_in_state_not_in_azure (__main__.FullDeployment) ... ok
+test_state_and_azure_tag_mismatch (__main__.FullDeployment) ... ok
+test_state_entry_outside_the_workload_group (__main__.FullDeployment) ... ok
+test_tags_absent_entirely (__main__.FullDeployment) ... ok
+test_unknown_resource_type (__main__.FullDeployment) ... ok
+test_untagged_os_disk_is_not_a_carrier (__main__.FullDeployment) ... ok
+test_every_carrier_type_is_tagged_from_common_tags (__main__.MappingCoversTheConfiguration) ... ok
+test_every_declared_resource_type_has_a_role (__main__.MappingCoversTheConfiguration) ... ok
+test_fixture_contains_every_workload_resource (__main__.MappingCoversTheConfiguration) ... ok
+test_only_exact_real_utc_times (__main__.ParseExpiry) ... ok
+
+----------------------------------------------------------------------
+Ran 23 tests in 0.064s
+
+OK
+
+==> Guest expiry script tests (stubbed docker/systemctl)
+PASS: start: unexpired, digest matches -> pulls by digest, runs hardened on :80
+PASS: boot after expiry: app never started, data deleted, service disabled
+PASS: malformed expiry -> refuses to start, no docker calls
+PASS: impossible date (month 13) -> refuses to start
+PASS: missing expiry -> refuses to start
+PASS: env file is parsed, never executed (command substitution stays inert)
+PASS: mutable tag instead of digest -> refuses to pull
+PASS: image from another namespace -> refuses to pull
+PASS: pulled image lacks the planned digest -> not run
+PASS: guest app stop (timer): stops app, deletes data, never touches Azure
+
+Guest expiry tests: 10/10 passed
+
+==> Lifetime gates: plan expiry, pre-apply, pre-window, 02:00 UK / 03:30 UTC
+test_rejected (__main__.BadInput) ... ok
+test_writes_github_output (__main__.Cli) ... ok
+test_auto_shutdown_and_destroy_times (__main__.MatchesTheConfiguration) ... ok
+test_autumn_back_night (__main__.Plan) ... ok
+test_expiry_rounded_up_to_the_minute (__main__.Plan) ... ok
+test_failure_scenario_never_gets_a_window (__main__.Plan) ... ok
+test_healthy_30_min_window (__main__.Plan) ... ok
+test_maximum_window_fits_the_cap (__main__.Plan) ... ok
+test_nightly_destroy_guard_0320_utc (__main__.Plan) ... ok
+test_reports_next_safety_net_times (__main__.Plan) ... ok
+test_spring_forward_night (__main__.Plan) ... ok
+test_summer_auto_shutdown_is_0100_utc (__main__.Plan) ... ok
+test_winter_auto_shutdown_is_0200_utc (__main__.Plan) ... ok
+test_blackout_rechecked_even_with_a_long_expiry (__main__.PreApply) ... ok
+test_full_margin_is_kept (__main__.PreApply) ... ok
+test_late_approval_uses_the_allowance_not_the_window (__main__.PreApply) ... ok
+test_window_refused_before_auto_shutdown (__main__.PreWindow) ... ok
+test_window_starts_only_if_it_fits_in_full (__main__.PreWindow) ... ok
+
+----------------------------------------------------------------------
+Ran 18 tests in 0.037s
+
+OK
+
+==> Expiry sweep and guarded failure-cleanup (stubbed terraform/az)
+test_apply_attempted_destroys_without_reading_tags (__main__.GuardedDestroy) ... ok
+test_bad_apply_attempted_value (__main__.GuardedDestroy) ... ok
+test_bad_mode (__main__.GuardedDestroy) ... ok
+test_not_attempted_and_uncertain_tags_is_inconclusive (__main__.GuardedDestroy) ... ok
+test_rejected_plan_never_destroys_a_preexisting_unexpired_environment (__main__.GuardedDestroy)
+Plan rejected / not approved / hash mismatch / stopped before apply: APPLY_ATTEMPTED is ... ok
+test_stopped_before_apply_with_empty_group_is_noop (__main__.GuardedDestroy) ... ok
+test_sweep_azure_read_error (__main__.GuardedDestroy) ... ok
+test_sweep_beyond_the_cap (__main__.GuardedDestroy) ... ok
+test_sweep_conflicting_tags (__main__.GuardedDestroy) ... ok
+test_sweep_destroy_verification_failure_fails (__main__.GuardedDestroy) ... ok
+test_sweep_destroys_expired_and_verifies (__main__.GuardedDestroy) ... ok
+test_sweep_empty_is_noop (__main__.GuardedDestroy) ... ok
+test_sweep_malformed_tag (__main__.GuardedDestroy) ... ok
+test_sweep_missing_tag (__main__.GuardedDestroy) ... ok
+test_sweep_protects_unexpired (__main__.GuardedDestroy) ... ok
+test_sweep_protects_within_grace (__main__.GuardedDestroy) ... ok
+test_sweep_state_and_azure_disagree (__main__.GuardedDestroy) ... ok
+test_sweep_state_lock (__main__.GuardedDestroy) ... ok
+test_sweep_state_read_error (__main__.GuardedDestroy) ... ok
+test_sweep_unmanaged_resource_in_group (__main__.GuardedDestroy) ... ok
+test_sweep_unreadable_state_json (__main__.GuardedDestroy) ... ok
+test_unknown_attempt_but_resources_carry_this_runs_expiry (__main__.GuardedDestroy) ... ok
+
+----------------------------------------------------------------------
+Ran 22 tests in 0.820s
+
+OK
+
+==> Deploy report: application vs cleanup results
+test_application_failed_cleanup_passed_is_failed (__main__.Report) ... ok
+test_cancelled_window (__main__.Report) ... ok
+test_cleanup_inconclusive_fails (__main__.Report) ... ok
+test_deliberate_failure_scenario (__main__.Report) ... ok
+test_even_all_passing_fault_build_run_is_failed (__main__.Report) ... ok
+test_healthy_run_passes (__main__.Report) ... ok
+test_no_url_or_ip (__main__.Report) ... ok
+test_plan_failed_nothing_created (__main__.Report) ... ok
+test_rejected_plan_with_preexisting_environment (__main__.Report) ... ok
+test_stopped_before_apply (__main__.Report) ... ok
+test_window_refused_fails_the_run (__main__.Report) ... ok
+
+----------------------------------------------------------------------
+Ran 11 tests in 0.140s
+
+OK
+
+==> Image build/push and inspection window scripts (stubbed docker, fake clock)
+== build-push.sh ==
+PASS: healthy scenario builds the healthy target and outputs its digest
+PASS: failure scenario (and only it) builds the fault target
+PASS: unknown scenario -> exit 2, nothing built
+PASS: built image label does not match the variant -> exit 1, not pushed
+PASS: push fails -> exit 1, no outputs
+PASS: no digest after push -> exit 1
+PASS: registry login fails -> exit 1, nothing built
+PASS: short GITHUB_SHA -> exit 2
+
+== inspection-window.sh ==
+PASS: 15-min window runs in full, prints times only, never an address
+PASS: window length other than 15/30/45 -> exit 2
+PASS: malformed expiry -> exit 2
+
+CI helper tests: 11/11 passed
+
+==> Script behaviour tests (stubbed az/terraform/curl/ssh, no network)
+== verify-cleanup.sh ==
+PASS: cleanup: all resources absent -> exit 0
+PASS: cleanup: custom suffix stays scoped to its own resource group
+PASS: cleanup KEEP_RESOURCE_GROUP=1: group kept and empty -> exit 0
+PASS: cleanup KEEP_RESOURCE_GROUP=1: resources still in the kept group -> exit 1
+PASS: cleanup KEEP_RESOURCE_GROUP=1: missing persistent group is a failure -> exit 1
+PASS: cleanup KEEP_RESOURCE_GROUP=1: resource count error is inconclusive, never PASS -> exit 2
+PASS: cleanup: invalid KEEP_RESOURCE_GROUP value -> exit 2
+PASS: cleanup: remaining resource group, public IP and state -> exit 1
+PASS: cleanup: not logged in (az account show fails) -> exit 2, authentication
+PASS: cleanup: expired token on queries -> exit 2, authentication
+PASS: cleanup: AuthorizationFailed -> exit 2, permission
+PASS: cleanup: network failure -> exit 2, network
+PASS: cleanup: unexpected Azure error -> exit 2, unexpected
+PASS: cleanup: unexpected 'az group exists' output -> exit 2
+PASS: cleanup: one lookup hits a network error -> exit 2, others still PASS
+PASS: cleanup: failed 'terraform state list' is not an empty state -> exit 2
+PASS: cleanup: no state file in this folder -> exit 2
+PASS: cleanup: remaining resources take precedence over inconclusive -> exit 1
+
+== connectivity-check.sh ==
+PASS: connectivity: everything healthy -> exit 0
+PASS: connectivity: /health returns HTTP 500 -> exit 1
+PASS: connectivity: /health 200 but wrong body -> exit 1
+PASS: connectivity: landing page missing title -> exit 1
+PASS: connectivity: HTTP timeout -> exit 1
+PASS: connectivity: HTTP connection refused -> exit 1
+PASS: connectivity: SSH timeout never counts as password auth disabled -> exit 1
+PASS: connectivity: probe timeout with working key session -> exit 1
+PASS: connectivity: key rejected -> exit 1
+PASS: connectivity: password authentication enabled -> exit 1
+PASS: connectivity: sshd -T unreadable (sudo fails) -> exit 1
+PASS: connectivity: cloud-init error -> exit 1
+PASS: connectivity: container unhealthy -> exit 1
+PASS: connectivity: TCP ports closed -> exit 1
+PASS: connectivity: Terraform outputs missing -> exit 2
+PASS: connectivity: SSH key missing -> exit 2
+
+== azure-validate.sh ==
+PASS: azure-validate public: healthy ticket app -> exit 0
+PASS: azure-validate public: /version reports the fault build when healthy expected -> exit 1
+PASS: azure-validate public: fault build expected and reported -> exit 0
+PASS: azure-validate public: EXPECTED_APP_VARIANT unset -> exit 2 before any request
+PASS: azure-validate public: HTTP timeout -> exit 1
+PASS: azure-validate public: SSH timeout is not proof -> exit 1
+PASS: azure-validate public: password offered -> exit 1
+PASS: azure-validate in-vm: healthy, key installed, outbound via public IP -> exit 0
+PASS: azure-validate in-vm: Run Command error never passes -> exit 1
+PASS: azure-validate in-vm: outbound IP mismatch -> exit 1
+PASS: azure-validate in-vm: password auth enabled -> exit 1
+PASS: azure-validate in-vm: cloud-init still running -> exit 1
+PASS: azure-validate in-vm: container unhealthy -> exit 1
+PASS: azure-validate in-vm: running image is not the planned digest -> exit 1
+PASS: azure-validate in-vm: expiry timer not armed -> exit 1
+PASS: azure-validate in-vm: EXPECTED_APP_IMAGE is a tag -> exit 2 before any Azure call
+PASS: azure-validate in-vm: admin key not installed -> exit 1
+PASS: azure-validate blocked: rules final, HTTP/SSH time out -> exit 0
+PASS: azure-validate blocked: temporary rule still present -> exit 1
+PASS: azure-validate blocked: HTTP still reachable -> exit 1
+PASS: azure-validate blocked: NSG read error is inconclusive, not a pass -> exit 2
+PASS: azure-validate blocked: curl 8 connect-timeout wording counts as dropped -> exit 0
+PASS: azure-validate blocked: TCP 22 still connects -> exit 1
+PASS: azure-validate blocked: HTTP timeout after connecting is not blocked -> exit 1
+PASS: azure-validate blocked: HTTP connection refused is inconclusive -> exit 2
+PASS: azure-validate blocked: HTTP network unreachable is inconclusive -> exit 2
+PASS: azure-validate blocked: curl invalid option is inconclusive -> exit 2
+PASS: azure-validate blocked: TCP 22 refused is inconclusive -> exit 2
+PASS: azure-validate blocked: TCP 22 network unreachable is inconclusive -> exit 2
+PASS: azure-validate blocked: timeout tool error (exit 125) is inconclusive -> exit 2
+PASS: azure-validate blocked: failed control request -> probes not evaluated, exit 2
+PASS: azure-validate blocked: failure takes precedence over inconclusive -> exit 1
+PASS: azure-validate blocked: 'timeout' missing from PATH -> exit 2 before any Azure call
+PASS: azure-validate blocked: 'curl' missing from PATH -> exit 2
+PASS: azure-validate blocked: malformed EXPECTED_ADMIN_CIDR -> exit 2
+PASS: azure-validate: non-numeric CONNECT_TIMEOUT -> exit 2
+PASS: azure-validate: unexpected extra argument -> exit 2
+
+== bootstrap/bootstrap.sh ==
+PASS: bootstrap: dry run lists changes and makes no Azure writes -> exit 0
+PASS: bootstrap: signed in to a different tenant -> exit 1, nothing changed
+PASS: bootstrap: signed in to a different subscription -> exit 1, nothing changed
+PASS: bootstrap: Azure CLI not signed in -> exit 2
+PASS: bootstrap: workload group already holds resources -> exit 1 before any write
+PASS: bootstrap: unexpected resource in the state group -> exit 1 before any write
+PASS: bootstrap: resource group check error -> exit 2
+PASS: bootstrap: missing --owner-tag -> exit 2
+PASS: bootstrap --apply: hardened state storage, delete lock, versioning, soft delete
+PASS: bootstrap --apply: least-privilege roles, no role-assignment rights, exact OIDC subjects
+PASS: bootstrap --apply: legacy name-only OIDC subjects are updated to the immutable format
+PASS: bootstrap --apply: correct OIDC subjects are left unchanged
+PASS: bootstrap --apply: correct subject but wrong issuer or audience is repaired
+PASS: bootstrap: another --github-repo without its IDs -> exit 2
+PASS: bootstrap: non-numeric --github-repo-id -> exit 2
+
+== bootstrap/teardown.sh ==
+PASS: teardown: dry run with workload gone and empty state -> exit 0, nothing deleted
+PASS: teardown: workload resources still present -> exit 1, nothing deleted
+PASS: teardown: state still tracks managed resources -> exit 1, nothing deleted
+PASS: teardown: state unreadable (permission) is inconclusive -> exit 2, nothing deleted
+PASS: teardown: unsupported state blob 'braces' is inconclusive -> exit 2, nothing deleted
+PASS: teardown: unsupported state blob 'null' is inconclusive -> exit 2, nothing deleted
+PASS: teardown: unsupported state blob 'noresources' is inconclusive -> exit 2, nothing deleted
+PASS: teardown: unsupported state blob 'wrongtype' is inconclusive -> exit 2, nothing deleted
+PASS: teardown: unsupported state blob 'malformed' is inconclusive -> exit 2, nothing deleted
+PASS: teardown: unsupported state blob 'badmode' is inconclusive -> exit 2, nothing deleted
+PASS: teardown: unsupported state blob 'v3' is inconclusive -> exit 2, nothing deleted
+PASS: teardown: unsupported state blob 'emptyfile' is inconclusive -> exit 2, nothing deleted
+PASS: teardown: unexpected state-group existence answer is inconclusive -> exit 2, nothing deleted
+PASS: teardown: wrong subscription -> exit 1
+PASS: teardown --apply: workload group, identities, lock, then state backend LAST
+
+== scripts/github/setup-github.sh ==
+PASS: github setup: dry run changes nothing and never prints secret values -> exit 0
+PASS: github setup --apply: self-approvable reviewer only on azure-deploy, main-only, OIDC claims
+PASS: github setup: gh not signed in as a repository admin -> exit 2
+PASS: github setup: internet-wide admin source rejected -> exit 2
+PASS: github setup: non-public-key file rejected -> exit 2
+
+== scripts/ci helpers ==
+PASS: backend-init: Entra ID + OIDC backend, no keys -> exit 0
+PASS: backend-init: ARM_CLIENT_SECRET present -> refused, exit 2
+PASS: backend-init: storage access key present -> refused, exit 2
+PASS: backend-init: missing storage account variable -> exit 2
+PASS: plan-summary: addresses/actions/counts only, no values; writes outputs -> exit 0
+PASS: plan-summary: reads and no-ops only -> has_changes=false
+PASS: plan-summary: allowlisted details + 14 policy checks pass, no private values
+PASS: plan-summary: no-change plan still evaluated against planned values
+PASS: plan-summary policy: 'open-ssh' fails closed -> exit 1, no outputs, not offered for approval
+PASS: plan-summary policy: 'internet-http' fails closed -> exit 1, no outputs, not offered for approval
+PASS: plan-summary policy: 'wide-range' fails closed -> exit 1, no outputs, not offered for approval
+PASS: plan-summary policy: 'temp-rule' fails closed -> exit 1, no outputs, not offered for approval
+PASS: plan-summary policy: 'no-deny' fails closed -> exit 1, no outputs, not offered for approval
+PASS: plan-summary policy: 'password-enabled' fails closed -> exit 1, no outputs, not offered for approval
+PASS: plan-summary policy: 'wrong-size' fails closed -> exit 1, no outputs, not offered for approval
+PASS: plan-summary policy: 'unknown-size' fails closed -> exit 1, no outputs, not offered for approval
+PASS: plan-summary policy: 'unknown-source' fails closed -> exit 1, no outputs, not offered for approval
+PASS: plan-summary policy: 'no-shutdown' fails closed -> exit 1, no outputs, not offered for approval
+PASS: plan-summary policy: 'wrong-shutdown' fails closed -> exit 1, no outputs, not offered for approval
+PASS: plan-summary policy: 'implicit-outbound' fails closed -> exit 1, no outputs, not offered for approval
+PASS: plan-summary policy: 'no-planned-values' fails closed -> exit 1, no outputs, not offered for approval
+PASS: plan-summary policy: 'broken-variant' fails closed -> exit 1, no outputs, not offered for approval
+PASS: plan-summary policy: 'image-tag' fails closed -> exit 1, no outputs, not offered for approval
+PASS: plan-summary policy: 'image-other' fails closed -> exit 1, no outputs, not offered for approval
+PASS: plan-summary policy: 'expiry-too-far' fails closed -> exit 1, no outputs, not offered for approval
+PASS: plan-summary policy: 'expiry-past' fails closed -> exit 1, no outputs, not offered for approval
+PASS: plan-summary policy: 'expiry-malformed' fails closed -> exit 1, no outputs, not offered for approval
+PASS: plan-summary policy: 'missing-expiry-tag' fails closed -> exit 1, no outputs, not offered for approval
+PASS: plan-summary policy: 'cloud-init-mismatch' fails closed -> exit 1, no outputs, not offered for approval
+PASS: plan-summary policy: 'no-app-image' fails closed -> exit 1, no outputs, not offered for approval
+PASS: plan-summary policy: fault build refused for the healthy scenario, accepted only for the failure scenario
+PASS: plan-summary policy: healthy image refused for the failure scenario -> exit 1
+PASS: plan-summary policy: EXPECTED_APP_IMAGE/VARIANT unset -> unevaluable, exit 1
+PASS: plan-summary: unreadable plan -> exit 2
+PASS: sanitize: masks IPs, GUIDs, keys, fingerprints, SAS signatures; keeps versions
+PASS: sanitize: masks truncated GUIDs in Terraform progress lines; keeps other ellipses
+PASS: temp-access add: exactly one /32 on TCP 22 and 80 -> exit 0
+PASS: temp-access add: refuses '0.0.0.0/0' -> exit 2, no Azure call
+PASS: temp-access add: refuses '198.51.100.0/24' -> exit 2, no Azure call
+PASS: temp-access add: refuses '0.0.0.0/32' -> exit 2, no Azure call
+PASS: temp-access add: refuses '*' -> exit 2, no Azure call
+PASS: temp-access add: refuses '' -> exit 2, no Azure call
+PASS: temp-access remove: rule confirmed absent -> exit 0
+PASS: temp-access remove: NSG already gone -> exit 0
+PASS: temp-access remove: rule still present -> exit 1
+PASS: temp-access remove: cannot confirm absence -> inconclusive exit 2, never 'removed'
+PASS: temp-access remove: NSG read error -> inconclusive exit 2
+PASS: runner-ip: two services agree -> prints one /32
+PASS: runner-ip: services disagree -> exit 2, no address
+PASS: runner-ip: private address -> exit 2
+PASS: runner-ip: lookup failure -> exit 2
+PASS: wait-for-health: /health 200 -> exit 0
+
+Script tests: 158 passed, 0 failed (of 158)
+
+==> Workflow security policy tests
+PASS: build-image.yml meets the workflow security policy
+PASS: ci.yml meets the workflow security policy
+PASS: deploy.yml meets the workflow security policy
+PASS: destroy.yml meets the workflow security policy
+PASS: deploy and destroy share one non-cancelling concurrency group
+PASS: environments plan/apply/cleanup/destroy = {'plan': 'azure-plan', 'apply': 'azure-deploy', 'failure-cleanup': 'azure-destroy'}, destroy=azure-destroy
+PASS: apply job removes temporary runner access in an always() step
+PASS: apply job also runs for a no-change plan (validates/destroys a kept workload); only the apply step is skipped
+PASS: failure-cleanup runs when apply/validation fails, is cancelled or is not approved
+PASS: build-image has packages: write and no Azure access
+PASS: only build jobs may write packages
+PASS: scenario gating: plan derives EXPECTED_APP_VARIANT from inputs.scenario, not from the build output
+PASS: plan computes expiry (lifetime.py plan) before terraform plan and passes it as TF_VAR_expires_at
+PASS: pre-apply lifetime gate runs before the plan is fetched; it records stopped=true when it refuses
+PASS: apply attempt is recorded immediately before terraform apply
+PASS: inspection window: after runner access is blocked, after the pre-window gate, only on decision == 'pass'
+PASS: application test 'flow' runs after a failed earlier check (not cancelled) and is reported
+PASS: application test 'ui' runs after a failed earlier check (not cancelled) and is reported
+PASS: failure-cleanup destroys only via guarded-destroy.sh (if: always()), given this run's apply attempt and expiry
+PASS: report runs always, without Azure access, after apply and failure-cleanup, via run-report.py
+PASS: hourly sweep destroys only via guarded-destroy.sh (MODE=sweep); nightly/manual destroy is a separate job
+PASS: control - M3 rules catch an unconditional failure-cleanup destroy and a missing pre-apply gate (2 failures)
+PASS: deploy.yml: every one of 15 injected command failures in piped steps fails the step
+PASS: destroy.yml: every one of 6 injected command failures in piped steps fails the step
+PASS: ci.yml: every one of 0 injected command failures in piped steps fails the step
+PASS: control - without pipefail 13 of 15 injected failures in deploy.yml would be masked
+PASS: destroy.yml:destroy destroy and cleanup verification run with if: always()
+PASS: deploy.yml:plan first step masks the Azure identifiers (empty values skipped)
+PASS: deploy.yml:apply first step masks the Azure identifiers (empty values skipped)
+PASS: deploy.yml:failure-cleanup first step masks the Azure identifiers (empty values skipped)
+PASS: destroy.yml:destroy first step masks the Azure identifiers (empty values skipped)
+PASS: destroy.yml:expiry-sweep first step masks the Azure identifiers (empty values skipped)
+PASS: checker rejects fixtures/bad-pr-azure.yml (4 expected violations)
+PASS: checker rejects fixtures/bad-unsafe-deploy.yml (8 expected violations)
+PASS: checker rejects fixtures/bad-m3-deploy.yml (5 expected violations)
+Workflow policy: all checks passed
+
+==> actionlint (GitHub Actions workflows)
+
+==> shellcheck
+
+==> Local web service test (Docker)
+Building and starting container (log: build/test-web-local.log) ...
+Waiting for http://127.0.0.1:8088/health ...
+PASS: /health returns HTTP 200 (got 200)
+PASS: /health body reports ok: {"status":"ok","service":"atlas-platform-foundation"}
+PASS: / returns HTTP 200 (got 200)
+PASS: / displays 'Atlas Platform Foundation'
+PASS: unknown path returns HTTP 404 (got 404)
+PASS: nginx version hidden (Server: nginx)
+PASS: container runs as non-root (uid 101)
+PASS: container root filesystem is read-only
+Waiting for Docker HEALTHCHECK ...
+PASS: Docker HEALTHCHECK reports healthy (got healthy)
+
+All local web service checks passed.
+
+==> Ticket app: unit, API flow and browser tests (Docker)
+Building atlas-tickets:local-test, atlas-tickets:local-test-broken-ignore-status and atlas-tickets-ui-test:local (log: build/test-tickets-local.log) ...
+== Unit tests (inside the image)
+.............
+----------------------------------------------------------------------
+Ran 13 tests in 0.081s
+
+OK
+PASS: unit tests pass
+== Container
+PASS: /health returns ok
+PASS: /version reports variant healthy
+PASS: /version reports revision f6e8de84d1b7
+PASS: image label atlas.variant=healthy (got healthy)
+PASS: container runs as non-root (uid 10001)
+PASS: root filesystem is read-only
+PASS: no write access outside the data volume and /tmp
+PASS: all capabilities dropped
+PASS: unknown path returns 404
+PASS: form posts rejected (JSON only, 415)
+== Independent API flow check
+STEP: created ticket ATL-1007 (status 'Open')
+STEP: requested status change to 'In progress'
+STEP: read ticket back (status 'In progress')
+PASS: saved status is 'In progress'
+PASS: saved priority is 'High'
+PASS: history records the status change
+PASS: ticket appears under the 'In progress' filter
+RESULT: ticket flow PASSED
+PASS: flow check exit code 0 (got 0)
+== Browser check (Playwright, Chromium)
+PASS: list page, environment banner and version footer shown
+PASS: list fits a 375px-wide screen
+PASS: overlong title shows a visible validation error
+PASS: ticket created through the form (Open, Critical)
+PASS: status shows 'In progress' after reload, and history records it
+PASS: ticket listed under the 'In progress' filter
+RESULT: browser check PASSED
+PASS: browser check exit code 0 (got 0)
+== Ticket data lifecycle
+PASS: tickets kept across a container restart (8 -> 8)
+PASS: removing the data volume deletes tickets (fresh start: 6 seed tickets)
+Waiting for Docker HEALTHCHECK ...
+PASS: Docker HEALTHCHECK reports healthy (got healthy)
+== Healthy image excludes the deliberate fault
+PASS: a build without --target is healthy (label healthy)
+PASS: healthy image has no atlas.deliberate-fault label
+PASS: healthy image contains no fault module or fault code
+== Test-the-test: DELIBERATE FAULT BUILD (broken-ignore-status)
+PASS: broken image label atlas.variant=broken-ignore-status (got broken-ignore-status)
+PASS: broken image adds exactly one fault module (/app/fault_ignore_status.py)
+PASS: /version reports variant broken-ignore-status
+PASS: /api/environment carries the DELIBERATE FAULT BUILD warning
+  | STEP: created ticket ATL-1007 (status 'Open')
+  | STEP: requested status change to 'In progress'
+  | STEP: read ticket back (status 'Open')
+  | FAIL: status mismatch: expected 'In progress', got 'Open'
+PASS: flow check FAILS against the fault build with exit 3 (got 3)
+PASS: flow check reports expected 'In progress', got 'Open'
+  | PASS: list page, environment banner and version footer shown
+  | PASS: list fits a 375px-wide screen
+  | PASS: overlong title shows a visible validation error
+  | PASS: ticket created through the form (Open, Critical)
+  | FAIL: status mismatch after reload: expected 'In progress', got 'Open'
+PASS: browser check FAILS against the fault build with exit 3 (got 3)
+PASS: browser check reports expected 'In progress', got 'Open' after reload
+PASS: fault is confined to status: priority updates still save on the fault build
+
+All ticket-app local checks passed.
+
+================ Summary ================
+PASS | terraform fmt -check -recursive
+PASS | terraform init -backend=false
+PASS | terraform validate
+PASS | terraform test (mocked provider, no Azure calls)
+PASS | Render cloud-init
+PASS | Rendered cloud-init: exact image digest, expiry timer, embedded scripts
+PASS | cloud-init schema validation
+PASS | Expiry-tag carriers and state-to-Azure mapping tests
+PASS | Guest expiry script tests (stubbed docker/systemctl)
+PASS | Lifetime gates: plan expiry, pre-apply, pre-window, 02:00 UK / 03:30 UTC
+PASS | Expiry sweep and guarded failure-cleanup (stubbed terraform/az)
+PASS | Deploy report: application vs cleanup results
+PASS | Image build/push and inspection window scripts (stubbed docker, fake clock)
+PASS | Script behaviour tests (stubbed az/terraform/curl/ssh, no network)
+PASS | Workflow security policy tests
+PASS | actionlint (GitHub Actions workflows)
+PASS | shellcheck
+PASS | Local web service test (Docker)
+PASS | Ticket app: unit, API flow and browser tests (Docker)
+Passed: 19  Failed: 0  Skipped: 0
+Azure deployment checks are NOT part of this script (see README sections 7-9).
+EXIT 0

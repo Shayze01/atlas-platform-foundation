@@ -45,6 +45,10 @@ fi
 
 run_step "Expiry-tag carriers and state-to-Azure mapping tests" python3 tests/expiry/test_expiry_map.py
 run_step "Guest expiry script tests (stubbed docker/systemctl)" ./tests/scripts/test-guest-expiry.sh
+run_step "Lifetime gates: plan expiry, pre-apply, pre-window, 02:00 UK / 03:30 UTC" python3 tests/lifetime/test_lifetime.py
+run_step "Expiry sweep and guarded failure-cleanup (stubbed terraform/az)" python3 tests/expiry/test_guarded_destroy.py
+run_step "Deploy report: application vs cleanup results" python3 tests/expiry/test_run_report.py
+run_step "Image build/push and inspection window scripts (stubbed docker, fake clock)" ./tests/scripts/test-ci-helpers.sh
 run_step "Script behaviour tests (stubbed az/terraform/curl/ssh, no network)" ./tests/scripts/run-script-tests.sh
 
 if python3 -c 'import yaml' >/dev/null 2>&1; then
@@ -61,7 +65,7 @@ fi
 
 if command -v shellcheck >/dev/null 2>&1; then
   run_step "shellcheck" shellcheck app/run-container.sh cloud-init/files/*.sh scripts/*.sh scripts/ci/*.sh scripts/github/*.sh \
-    bootstrap/*.sh tests/scripts/*.sh tests/scripts/stubs/* tests/scripts/stubs-m2/* tests/scripts/stubs-guest/*
+    bootstrap/*.sh tests/scripts/*.sh tests/scripts/stubs/* tests/scripts/stubs-m2/* tests/scripts/stubs-guest/* tests/scripts/stubs-ci/*
 else
   skip_step "shellcheck" "shellcheck not installed"
 fi

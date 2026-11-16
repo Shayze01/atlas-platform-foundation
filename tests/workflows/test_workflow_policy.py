@@ -9,6 +9,12 @@ Enforces the Milestone 2 trust boundaries:
   * no artifacts; plans are applied only from the saved, reviewed file
   * Terraform/validation output piped through scripts/ci/sanitize.sh
   * deploy and destroy share one non-cancelling concurrency group
+Milestone 3 additions:
+  * packages: write only on build jobs without Azure access; no continue-on-error
+  * the app address is masked wherever it is read and never written to summaries
+  * lifetime gates precede apply and the inspection window; apply attempts are recorded
+  * failure-cleanup and the hourly sweep destroy only through guarded-destroy.sh
+  * the report job runs always, without Azure access, and fails on app failure
 Also runs the checker against deliberately bad fixtures to prove it rejects them.
 """
 import glob
@@ -25,7 +31,8 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 SHA = re.compile(r"^[^@\s]+@[0-9a-f]{40}$")
 TRUSTED_AZURE_TRIGGERS = {"workflow_dispatch", "schedule"}
 MASKED_VARS = ("ARM_TENANT_ID", "ARM_SUBSCRIPTION_ID", "ARM_CLIENT_ID", "TFSTATE_STORAGE_ACCOUNT")
-SANITISED = re.compile(r"(terraform (init|apply|destroy|plan)|backend-init\.sh|azure-validate\.sh|verify-cleanup\.sh|temp-access\.sh remove)")
+SANITISED = re.compile(r"(terraform (init|apply|destroy|plan)|backend-init\.sh|azure-validate\.sh|verify-cleanup\.sh|temp-access\.sh remove|guarded-destroy\.sh|flow_check\.py|ui_check\.py)")
+PRIVATE_OUTPUTS = re.compile(r"terraform output[^\n]*\b(web_url|health_url|ssh_command)\b")
 
 
 def load(path):
@@ -73,6 +80,11 @@ def check(path):
         where = f"{name}:{job_id}"
         steps = job.get("steps", []) or []
         id_token = perms_grant_id_token(job.get("permissions")) or perms_grant_id_token(doc.get("permissions"))
+        perms = job.get("permissions") or {}
+        if isinstance(perms, dict) and perms.get("packages") == "write" and (id_token or job.get("environment")):
+            v.append(f"{where}: packages: write on a job with Azure access (build jobs must have none)")
+        if job.get("continue-on-error") or any(st.get("continue-on-error") for st in steps):
+            v.append(f"{where}: continue-on-error would hide a failed test or cleanup")
         if is_pr and (id_token or job.get("environment")):
             v.append(f"{where}: pull-request job has id-token or an environment (Azure access)")
         if id_token:
@@ -100,6 +112,12 @@ def check(path):
                 v.append(f"{sw}: terraform apply must apply the saved, reviewed plan file")
             if re.search(r"terraform show(?! -json)", run) or re.search(r"cat [^|\n]*tfstate", run):
                 v.append(f"{sw}: raw plan/state output in logs")
+            if "public_ip_address" in run and "::add-mask::" not in run:
+                v.append(f"{sw}: reads the app address without masking it")
+            if PRIVATE_OUTPUTS.search(run):
+                v.append(f"{sw}: prints a URL/SSH output to the public log")
+            if "GITHUB_STEP_SUMMARY" in run and re.search(r"APP_IP|public_ip|http://", run):
+                v.append(f"{sw}: writes the app address to the public run summary")
             if re.search(r"\bset -x\b|\bbash -x\b", run):
                 v.append(f"{sw}: shell tracing would leak values")
             for line in run.splitlines():
@@ -111,7 +129,8 @@ def check(path):
 # Commands a pipeline step may run; each is stubbed to fail on demand.
 CMD = re.compile(r"(?:\./scripts/(?:ci/)?)?([\w-]+\.sh)\b|\b(terraform|az)\b")
 STUBBED_SCRIPTS = ["ci/backend-init.sh", "ci/temp-access.sh", "ci/plan-summary.sh", "ci/runner-ip.sh",
-                   "ci/wait-for-health.sh", "azure-validate.sh", "verify-cleanup.sh"]
+                   "ci/wait-for-health.sh", "ci/guarded-destroy.sh", "ci/build-push.sh", "ci/inspection-window.sh",
+                   "azure-validate.sh", "verify-cleanup.sh"]
 STUB = '#!/usr/bin/env bash\nn="$(basename "$0")"\n[[ "$n" == "${FAIL_CMD:-}" ]] && { echo "boom from $n"; exit 3; }\necho "ok from $n"\n'
 
 
@@ -159,6 +178,69 @@ def pipefail_failures(doc, shell):
     return masked, checked
 
 
+def step_index(steps, pattern, key="run"):
+    for i, st in enumerate(steps):
+        if re.search(pattern, str(st.get(key) or "")):
+            return i
+    return -1
+
+
+def m3_rules(dj, destroy_jobs):
+    """Milestone 3 ordering and wiring rules for deploy.yml and destroy.yml. Returns failure count."""
+    results = []
+    build, plan, apply, fc, rep = (dj.get(k, {}) for k in ("build-image", "plan", "apply", "failure-cleanup", "report"))
+    st = apply.get("steps") or []
+
+    results.append(("build-image has packages: write and no Azure access",
+                    (build.get("permissions") or {}).get("packages") == "write" and not build.get("environment")
+                    and not perms_grant_id_token(build.get("permissions"))))
+    results.append(("only build jobs may write packages",
+                    all((j.get("permissions") or {}).get("packages") != "write" for k, j in dj.items() if k != "build-image")))
+    penv = plan.get("env") or {}
+    results.append(("scenario gating: plan derives EXPECTED_APP_VARIANT from inputs.scenario, not from the build output",
+                    "inputs.scenario" in str(penv.get("EXPECTED_APP_VARIANT")) and "build-image" not in str(penv.get("EXPECTED_APP_VARIANT"))
+                    and "needs.build-image.outputs.app_image" in str(penv.get("EXPECTED_APP_IMAGE"))))
+    psteps = plan.get("steps") or []
+    lt, tp = step_index(psteps, r"lifetime\.py plan"), step_index(psteps, r"terraform plan")
+    results.append(("plan computes expiry (lifetime.py plan) before terraform plan and passes it as TF_VAR_expires_at",
+                    0 <= lt < tp and "steps.lifetime.outputs.expires_at" in str((psteps[tp].get("env") or {}).get("TF_VAR_expires_at"))))
+    gate, fetch = step_index(st, r"lifetime\.py pre-apply"), step_index(st, r"az storage blob download")
+    attempt, tf_apply = step_index(st, r"attempted=true"), step_index(st, r"terraform apply")
+    results.append(("pre-apply lifetime gate runs before the plan is fetched; it records stopped=true when it refuses",
+                    0 <= gate < fetch and "stopped=true" in str(st[gate].get("run")) and st[gate].get("id") == "gate"))
+    results.append(("apply attempt is recorded immediately before terraform apply",
+                    attempt >= 0 and tf_apply == attempt + 1 and st[attempt].get("id") == "attempt"
+                    and st[attempt].get("if") == st[tf_apply].get("if")))
+    blocked, wgate = step_index(st, r"azure-validate\.sh blocked"), step_index(st, r"lifetime\.py pre-window")
+    window, destroy = step_index(st, r"inspection-window\.sh"), step_index(st, r"terraform destroy")
+    results.append(("inspection window: after runner access is blocked, after the pre-window gate, only on decision == 'pass'",
+                    0 <= blocked < wgate < window < destroy and "steps.window_gate.outputs.decision == 'pass'" in str(st[window].get("if"))
+                    and "inputs.scenario == 'healthy'" in str(st[wgate].get("if"))))
+    for sid in ("flow", "ui"):
+        i = step_index(st, sid, key="id")
+        results.append((f"application test '{sid}' runs after a failed earlier check (not cancelled) and is reported",
+                        i >= 0 and "!cancelled()" in str(st[i].get("if")) and f"steps.{sid}.outcome" in str((apply.get("outputs") or {}).values())))
+    fenv = fc.get("env") or {}
+    fsteps = fc.get("steps") or []
+    g = step_index(fsteps, r"MODE=failure-cleanup \./scripts/ci/guarded-destroy\.sh")
+    results.append(("failure-cleanup destroys only via guarded-destroy.sh (if: always()), given this run's apply attempt and expiry",
+                    g >= 0 and fsteps[g].get("if") == "always()" and step_index(fsteps, r"terraform destroy") == -1
+                    and "needs.apply.outputs.apply_attempted" in str(fenv.get("APPLY_ATTEMPTED"))
+                    and "needs.plan.outputs.expires_at" in str(fenv.get("OWN_EXPIRES_AT"))))
+    results.append(("report runs always, without Azure access, after apply and failure-cleanup, via run-report.py",
+                    rep.get("if") == "always()" and not perms_grant_id_token(rep.get("permissions")) and not rep.get("environment")
+                    and {"apply", "failure-cleanup"} <= set(rep.get("needs") or []) and step_index(rep.get("steps") or [], r"run-report\.py") >= 0))
+    sweep, dest = destroy_jobs.get("expiry-sweep", {}), destroy_jobs.get("destroy", {})
+    ssteps = sweep.get("steps") or []
+    results.append(("hourly sweep destroys only via guarded-destroy.sh (MODE=sweep); nightly/manual destroy is a separate job",
+                    "github.event.schedule == '17 * * * *'" in str(sweep.get("if")) and "github.event.schedule != '17 * * * *'" in str(dest.get("if"))
+                    and step_index(ssteps, r"MODE=sweep \./scripts/ci/guarded-destroy\.sh") >= 0 and step_index(ssteps, r"terraform destroy") == -1
+                    and sweep.get("environment") == "azure-destroy"))
+    for name, ok in results:
+        print(("PASS" if ok else "FAIL") + f": {name}")
+    return sum(1 for _, ok in results if not ok)
+
+
 def main():
     failures = 0
     workflows = sorted(glob.glob(os.path.join(ROOT, ".github", "workflows", "*.yml")))
@@ -203,8 +285,19 @@ def main():
         failures += 0 if ok else 1
         fc = dj["failure-cleanup"]
         ok = "always()" in str(fc.get("if")) and "needs.apply.result == 'failure'" in str(fc.get("if")) and "cancelled" in str(fc.get("if"))
-        print(("PASS" if ok else "FAIL") + ": failure-cleanup runs when apply/validation fails or is cancelled")
+        print(("PASS" if ok else "FAIL") + ": failure-cleanup runs when apply/validation fails, is cancelled or is not approved")
         failures += 0 if ok else 1
+        failures += m3_rules(dj, destroy["jobs"])
+        # Control: the M3 rules must notice an unconditional destroy in failure-cleanup and a missing gate.
+        import copy
+        bad = copy.deepcopy(dj)
+        bad["failure-cleanup"]["steps"].append({"if": "always()", "run": "terraform destroy -auto-approve | ./scripts/ci/sanitize.sh"})
+        bad["apply"]["steps"] = [x for x in bad["apply"]["steps"] if "pre-apply" not in str(x.get("run"))]
+        import contextlib, io
+        with contextlib.redirect_stdout(io.StringIO()):
+            caught = m3_rules(bad, destroy["jobs"])
+        print(("PASS" if caught >= 2 else "FAIL") + f": control - M3 rules catch an unconditional failure-cleanup destroy and a missing pre-apply gate ({caught} failures)")
+        failures += 0 if caught >= 2 else 1
 
     # Pipeline failures must fail the step (and therefore trigger cleanup).
     for wf_name in ("deploy.yml", "destroy.yml", "ci.yml"):
@@ -226,7 +319,7 @@ def main():
     else:
         print("FAIL: control - the pipefail test did not detect masking without pipefail"); failures += 1
     # Cleanup steps must run even after an earlier step failed.
-    for wf_name, job_id in (("deploy.yml", "failure-cleanup"), ("destroy.yml", "destroy")):
+    for wf_name, job_id in (("destroy.yml", "destroy"),):
         steps = (docs.get(wf_name) or {}).get("jobs", {}).get(job_id, {}).get("steps") or []
         late = [st for st in steps if re.search(r"terraform destroy|verify-cleanup\.sh", st.get("run") or "")]
         ok = len(late) == 2 and all(st.get("if") == "always()" for st in late)
@@ -249,6 +342,9 @@ def main():
             failures += 0 if ok else 1
 
     # The checker must reject known-bad workflows.
+    expected_m3 = {"bad-m3-deploy.yml": ["packages: write on a job with Azure access", "continue-on-error would hide",
+                                         "reads the app address without masking", "prints a URL/SSH output",
+                                         "writes the app address to the public run summary"]}
     expected = {
         "bad-pr-azure.yml": ["pull-request workflow references secrets", "pull-request job has id-token", "action not pinned",
                              "defaults.run.shell must be bash"],
@@ -257,7 +353,7 @@ def main():
                                   "artifacts are not allowed", "checkout must set persist-credentials", "not piped through",
                                   "Azure identifiers are not masked"],
     }
-    for fx, needles in expected.items():
+    for fx, needles in {**expected, **expected_m3}.items():
         problems = "\n".join(check(os.path.join(ROOT, "tests", "workflows", "fixtures", fx)))
         missing = [n for n in needles if n not in problems]
         if missing:

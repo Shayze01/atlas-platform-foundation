@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Fake clock for "date -u +%s"; everything else goes to the real date.
+if [[ "$*" == "-u +%s" ]]; then cat "${FAKE_CLOCK:?}"; else exec /bin/date "$@"; fi

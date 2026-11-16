@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Fake sleep: advances the fake clock used by the date stub.
+echo "sleep $*" >>"${STUB_LOG:?}"
+echo $(( $(cat "${FAKE_CLOCK:?}") + $1 )) >"${FAKE_CLOCK}"
