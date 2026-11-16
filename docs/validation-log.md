@@ -501,3 +501,32 @@ Raw output: [`evidence/offline-validate-2026-11-15-m3-stage1.log`](evidence/offl
   live tests (Stages 3-7).
 - Browsers other than Chromium; load or concurrent users; accessibility beyond basic
   labels.
+
+## 12. Milestone 3 Stage 2: deliberate fault build and test-the-test (executed 2026-11-16, offline)
+
+**Scope:** a clearly labelled Docker target `broken-ignore-status` (`PATCH` answers 200
+but drops status changes), proof that the unchanged independent tests catch it, and proof
+that the healthy image contains none of the fault. Terraform, cloud-init, `app/` and all
+workflows are unchanged. Nothing was built for a registry or deployed to Azure. See
+[`tickets-app/README.md`](../tickets-app/README.md#deliberate-fault-build-broken-ignore-status).
+
+Raw output: [`evidence/offline-validate-2026-11-16-m3-stage2.log`](evidence/offline-validate-2026-11-16-m3-stage2.log).
+
+### Summary: 13 passed, 0 failed, 0 skipped (`REQUIRE_ALL=1`, exit 0)
+
+| Check | Result |
+| --- | --- |
+| Existing 12 checks and all Stage 1 ticket-app checks (unit tests 13/13, hardening, flow exit 0, browser exit 0, data lifecycle, healthcheck) | PASS, unchanged |
+| A build without `--target` produces the healthy image (`healthy` is the last Dockerfile stage) | PASS |
+| Healthy image: no `atlas.deliberate-fault` label, no `fault_*` file anywhere, no fault strings under `/app` | PASS |
+| Fault image: labelled `broken-ignore-status`, adds exactly one file (`/app/fault_ignore_status.py`), `/version` and the UI banner say "DELIBERATE FAULT BUILD" | PASS |
+| Independent API flow check against the fault image | PASS - **fails as required**: exit 3, `status mismatch: expected 'In progress', got 'Open'` |
+| Browser check against the fault image | PASS - **fails as required**: exit 3, `status mismatch after reload: expected 'In progress', got 'Open'` |
+| Fault confined to status: a priority-only update still saves on the fault image | PASS |
+
+### Not covered by Stage 2
+
+- Building or publishing either image in CI for deployment, and the plan policy that
+  allows the fault image only for `scenario=deliberate-failure-ignore-status` (Stages 3-4).
+- Any live run of the fault image, `failure-cleanup` or the report job (Stage 7).
+
