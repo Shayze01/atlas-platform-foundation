@@ -76,6 +76,13 @@ class Plan(unittest.TestCase):
         self.assertIn("nightly Destroy at 03:30 UTC on 2026-11-17 (guarded from 03:20 UTC)", text)
         self.assertEqual(plan("2026-11-17T03:35:00Z", minutes="0")[0], 0)
 
+    def test_start_inside_the_0320_0330_band_sees_todays_destroy(self):
+        rc, _, text = plan("2026-11-17T03:25:00Z", minutes="0")
+        self.assertEqual(rc, 1)
+        self.assertIn("nightly Destroy at 03:30 UTC on 2026-11-17", text)
+        self.assertIn("next nightly Destroy 2026-11-17T03:30:00Z", text)
+        self.assertEqual(gate("pre-window", "2026-11-17T03:25:00Z", "2026-11-17T05:00:00Z", minutes="15")[0], 1)
+
     def test_reports_next_safety_net_times(self):
         text = plan("2026-07-01T12:00:00Z")[2]
         self.assertIn("next auto-shutdown 2026-07-02T01:00:00Z (02:00 UK, BST)", text)

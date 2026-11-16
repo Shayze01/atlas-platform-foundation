@@ -71,7 +71,10 @@ def blackouts(start, end):
         zone = shutdown.astimezone(UK).tzname()
         found.append((shutdown, f"the 02:00 UK auto-shutdown ({shutdown:%H:%M} UTC on {shutdown:%Y-%m-%d}, UK on {zone})"))
         destroy = datetime.combine(day, NIGHTLY_DESTROY_UTC, timezone.utc)
-        found.append((destroy - NIGHTLY_GUARD, f"the nightly Destroy at 03:30 UTC on {destroy:%Y-%m-%d} (guarded from 03:20 UTC)"))
+        label = f"the nightly Destroy at 03:30 UTC on {destroy:%Y-%m-%d} (guarded from 03:20 UTC)"
+        # Both ends of the 03:20-03:30 guard band, so a start inside the band still sees 03:30.
+        found.append((destroy - NIGHTLY_GUARD, label))
+        found.append((destroy, label))
         day += timedelta(days=1)
     return sorted((t, d) for t, d in found if start < t <= end)
 
@@ -79,7 +82,7 @@ def blackouts(start, end):
 def next_blackouts(now):
     later = blackouts(now, now + timedelta(days=2))
     shutdown = next(t for t, d in later if "auto-shutdown" in d)
-    destroy = next(t for t, d in later if "nightly" in d) + NIGHTLY_GUARD
+    destroy = next(t for t, d in later if "nightly" in d and t.time() == NIGHTLY_DESTROY_UTC)
     return shutdown, destroy
 
 
