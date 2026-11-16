@@ -70,13 +70,13 @@ PASS: expiry timer catches up at boot if the expiry passed while stopped
 PASS: app service runs the boot-time expiry check before starting
 PASS: timer and app service enabled
 PASS: no image build or mutable tag on the VM
-PASS: rendered cloud-init is 5732 bytes (< 32 KiB, Azure limit 64 KiB)
+PASS: rendered cloud-init is 7330 bytes (< 32 KiB, Azure limit 64 KiB)
 
 ==> cloud-init schema validation
-2026-11-16 21:22:46,499 - sources[WARNING]: failed loading pickle in /var/lib/cloud/instance/obj.pkl: [Errno 13] Permission denied: '/var/lib/cloud/instance/obj.pkl'
-2026-11-16 21:22:46,502 - log_util.py[WARNING]: Failed pickling datasource to /var/lib/cloud/instance/obj.pkl
-2026-11-16 21:22:46,502 - log_util.py[WARNING]: Getting data from <class 'cloudinit.sources.DataSourceNone.DataSourceNone'> failed
-2026-11-16 21:22:46,512 - schema.py[WARNING]: datasource not detected, using default instance-data/user-data paths.
+2026-11-16 21:45:56,545 - sources[WARNING]: failed loading pickle in /var/lib/cloud/instance/obj.pkl: [Errno 13] Permission denied: '/var/lib/cloud/instance/obj.pkl'
+2026-11-16 21:45:56,547 - log_util.py[WARNING]: Failed pickling datasource to /var/lib/cloud/instance/obj.pkl
+2026-11-16 21:45:56,548 - log_util.py[WARNING]: Getting data from <class 'cloudinit.sources.DataSourceNone.DataSourceNone'> failed
+2026-11-16 21:45:56,556 - schema.py[WARNING]: datasource not detected, using default instance-data/user-data paths.
 Valid schema build/cloud-init.rendered.yaml
 
 ==> Expiry-tag carriers and state-to-Azure mapping tests
@@ -105,13 +105,14 @@ test_fixture_contains_every_workload_resource (__main__.MappingCoversTheConfigur
 test_only_exact_real_utc_times (__main__.ParseExpiry) ... ok
 
 ----------------------------------------------------------------------
-Ran 23 tests in 0.064s
+Ran 23 tests in 0.092s
 
 OK
 
 ==> Guest expiry script tests (stubbed docker/systemctl)
 PASS: start: unexpired, digest matches -> pulls by digest, runs hardened on :80
 PASS: boot after expiry: app never started, data deleted, service disabled
+PASS: pull spans expiry -> app not started, guest app stop runs instead
 PASS: malformed expiry -> refuses to start, no docker calls
 PASS: impossible date (month 13) -> refuses to start
 PASS: missing expiry -> refuses to start
@@ -119,9 +120,14 @@ PASS: env file is parsed, never executed (command substitution stays inert)
 PASS: mutable tag instead of digest -> refuses to pull
 PASS: image from another namespace -> refuses to pull
 PASS: pulled image lacks the planned digest -> not run
-PASS: guest app stop (timer): stops app, deletes data, never touches Azure
+PASS: guest app stop (timer): removes, verifies absence, never touches Azure
+PASS: guest app stop: already absent -> success after verification
+PASS: guest app stop: container removal fails and it remains -> exit 1, no success
+PASS: guest app stop: volume removal fails and it remains -> exit 1
+PASS: guest app stop: Docker unreachable -> cannot verify, exit 1
+PASS: boot after expiry with a failed removal -> app service fails (exit 1)
 
-Guest expiry tests: 10/10 passed
+Guest expiry tests: 16/16 passed
 
 ==> Lifetime gates: plan expiry, pre-apply, pre-window, 02:00 UK / 03:30 UTC
 test_rejected (__main__.BadInput) ... ok
@@ -135,6 +141,7 @@ test_maximum_window_fits_the_cap (__main__.Plan) ... ok
 test_nightly_destroy_guard_0320_utc (__main__.Plan) ... ok
 test_reports_next_safety_net_times (__main__.Plan) ... ok
 test_spring_forward_night (__main__.Plan) ... ok
+test_start_inside_the_0320_0330_band_sees_todays_destroy (__main__.Plan) ... ok
 test_summer_auto_shutdown_is_0100_utc (__main__.Plan) ... ok
 test_winter_auto_shutdown_is_0200_utc (__main__.Plan) ... ok
 test_blackout_rechecked_even_with_a_long_expiry (__main__.PreApply) ... ok
@@ -144,7 +151,7 @@ test_window_refused_before_auto_shutdown (__main__.PreWindow) ... ok
 test_window_starts_only_if_it_fits_in_full (__main__.PreWindow) ... ok
 
 ----------------------------------------------------------------------
-Ran 18 tests in 0.037s
+Ran 19 tests in 0.040s
 
 OK
 
@@ -153,8 +160,11 @@ test_apply_attempted_destroys_without_reading_tags (__main__.GuardedDestroy) ...
 test_bad_apply_attempted_value (__main__.GuardedDestroy) ... ok
 test_bad_mode (__main__.GuardedDestroy) ... ok
 test_not_attempted_and_uncertain_tags_is_inconclusive (__main__.GuardedDestroy) ... ok
+test_not_attempted_but_expired_is_destroyed (__main__.GuardedDestroy) ... ok
 test_rejected_plan_never_destroys_a_preexisting_unexpired_environment (__main__.GuardedDestroy)
 Plan rejected / not approved / hash mismatch / stopped before apply: APPLY_ATTEMPTED is ... ok
+test_same_expiry_as_this_run_is_not_proof_of_ownership (__main__.GuardedDestroy)
+Two plans (e.g. different windows) can produce the same ExpiresAt: without an apply ... ok
 test_stopped_before_apply_with_empty_group_is_noop (__main__.GuardedDestroy) ... ok
 test_sweep_azure_read_error (__main__.GuardedDestroy) ... ok
 test_sweep_beyond_the_cap (__main__.GuardedDestroy) ... ok
@@ -171,10 +181,9 @@ test_sweep_state_lock (__main__.GuardedDestroy) ... ok
 test_sweep_state_read_error (__main__.GuardedDestroy) ... ok
 test_sweep_unmanaged_resource_in_group (__main__.GuardedDestroy) ... ok
 test_sweep_unreadable_state_json (__main__.GuardedDestroy) ... ok
-test_unknown_attempt_but_resources_carry_this_runs_expiry (__main__.GuardedDestroy) ... ok
 
 ----------------------------------------------------------------------
-Ran 22 tests in 0.820s
+Ran 23 tests in 0.944s
 
 OK
 
@@ -184,6 +193,7 @@ test_cancelled_window (__main__.Report) ... ok
 test_cleanup_inconclusive_fails (__main__.Report) ... ok
 test_deliberate_failure_scenario (__main__.Report) ... ok
 test_even_all_passing_fault_build_run_is_failed (__main__.Report) ... ok
+test_failed_deployment_check_with_passing_tests_is_failed (__main__.Report) ... ok
 test_healthy_run_passes (__main__.Report) ... ok
 test_no_url_or_ip (__main__.Report) ... ok
 test_plan_failed_nothing_created (__main__.Report) ... ok
@@ -192,7 +202,7 @@ test_stopped_before_apply (__main__.Report) ... ok
 test_window_refused_fails_the_run (__main__.Report) ... ok
 
 ----------------------------------------------------------------------
-Ran 11 tests in 0.140s
+Ran 12 tests in 0.172s
 
 OK
 
@@ -459,7 +469,7 @@ PASS: unit tests pass
 == Container
 PASS: /health returns ok
 PASS: /version reports variant healthy
-PASS: /version reports revision f6e8de84d1b7
+PASS: /version reports revision 4d1c56b7c078
 PASS: image label atlas.variant=healthy (got healthy)
 PASS: container runs as non-root (uid 10001)
 PASS: root filesystem is read-only
