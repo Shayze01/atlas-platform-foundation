@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Stub docker for guest expiry tests. DOCKER_DIGEST_SCENARIO: match | mismatch
 echo "docker $*" >>"${STUB_LOG:?}"
+[[ "$1" == pull && -n "${DOCKER_PULL_SECONDS:-}" ]] && sleep "${DOCKER_PULL_SECONDS}"
 case "$1 $2" in
   "image inspect")
     img="${*: -1}"

@@ -41,6 +41,10 @@ has "expired at ${PAST}; not starting"; not_called "docker (pull|run)"; called "
 called "^docker volume rm -f atlas-tickets-data$"; called "^systemctl disable atlas-tickets.service$"
 [[ -s "${WORK}/state/expired" ]] || note "expired marker not written"; done_case
 
+SOON="$(date -u -d '+2 seconds' +%Y-%m-%dT%H:%M:%SZ)"
+run_guest "pull spans expiry -> app not started, guest app stop runs instead" 0 run-tickets.sh "${IMG}" "${SOON}" DOCKER_PULL_SECONDS=3
+called "^docker pull"; not_called "^docker run"; called "^docker volume rm -f atlas-tickets-data$"; has "not starting the app"; done_case
+
 run_guest "malformed expiry -> refuses to start, no docker calls" 1 run-tickets.sh "${IMG}" "2026-11-16 22:30"
 has "missing or malformed"; not_called "^docker"; done_case
 
