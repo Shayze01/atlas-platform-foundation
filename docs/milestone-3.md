@@ -52,7 +52,7 @@ Budget = provision 20 + tests 15 + inspection + cleanup 20 + margin 10 minutes.
 | Time | What happens | Limits |
 | --- | --- | --- |
 | Inspection end | in-job destroy starts (usually done in about 10 min) | only if the apply job is alive |
-| `ExpiresAt` (guest app stop) | the VM timer stops the app and deletes the ticket volume; the boot-time check never starts it again | only while the VM runs; doesn't stop billing |
+| `ExpiresAt` (guest app stop) | the VM timer stops the app and deletes the ticket volume, then succeeds only after Docker confirms both are absent (otherwise the unit fails); the boot-time check never starts it again | only while the VM runs; doesn't stop billing |
 | `ExpiresAt` + 15 min | hourly sweep may destroy | GitHub may delay or skip it |
 | 03:30 UTC | nightly Destroy (unconditional) | same as the sweep |
 
@@ -106,7 +106,7 @@ No new Azure roles, environments or federated credentials are needed.
 
 ## Tested offline vs not yet tested
 
-Offline results are in [`validation-log.md`](validation-log.md) sections 12-15.
+Offline results are in [`validation-log.md`](validation-log.md) sections 12-16.
 **Not live-tested:**
 - the GHCR pull and digest check on a real VM;
 - the guest timer and boot-time check;

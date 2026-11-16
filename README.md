@@ -29,7 +29,7 @@ app, the Atlas Service Desk demo (fictional data only), on this infrastructure:
 > limitations and anything untested are in [`docs/validation-log.md`](docs/validation-log.md)
 > section 4, with sanitised output in [`docs/evidence/2026-11-13-deployment/`](docs/evidence/2026-11-13-deployment/).
 > Latest offline run (2026-11-16, Milestone 3 Stages 1-4): `validate.sh` (`REQUIRE_ALL=1`) 19 passed, 0 failed, 0 skipped; `terraform test` 23/23; script tests 158/158 - see
-> [`docs/validation-log.md`](docs/validation-log.md) sections 12-15 (section 10 for the 2026-11-15 masking run).
+> [`docs/validation-log.md`](docs/validation-log.md) sections 12-16 (section 10 for the 2026-11-15 masking run).
 >
 > Latest live run (2026-11-14, Milestone 2 Deploy run [43588089749](https://github.com/Shayze01/atlas-platform-foundation/actions/runs/43588089749)):
 > 11 resources applied from the reviewed plan, public 5/5, in-VM 10/10, blocked 3/3,
@@ -947,5 +947,5 @@ Implemented in reviewable stages (#6 merged; #7-#10 in review). **Offline-tested
   - an hourly expiry sweep;
   - a report with separate application and cleanup rows.
 - **Full guide:** [`docs/milestone-3.md`](docs/milestone-3.md).
-- **Offline results:** [`docs/validation-log.md`](docs/validation-log.md) sections 12-15.
+- **Offline results:** [`docs/validation-log.md`](docs/validation-log.md) sections 12-16.
 - **Not live-tested:** everything that needs Azure or GitHub scheduling (see the guide's last section).

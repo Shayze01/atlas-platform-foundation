@@ -70,13 +70,13 @@ PASS: expiry timer catches up at boot if the expiry passed while stopped
 PASS: app service runs the boot-time expiry check before starting
 PASS: timer and app service enabled
 PASS: no image build or mutable tag on the VM
-PASS: rendered cloud-init is 6032 bytes (< 32 KiB, Azure limit 64 KiB)
+PASS: rendered cloud-init is 7330 bytes (< 32 KiB, Azure limit 64 KiB)
 
 ==> cloud-init schema validation
-2026-11-16 21:29:34,777 - sources[WARNING]: failed loading pickle in /var/lib/cloud/instance/obj.pkl: [Errno 13] Permission denied: '/var/lib/cloud/instance/obj.pkl'
-2026-11-16 21:29:34,779 - log_util.py[WARNING]: Failed pickling datasource to /var/lib/cloud/instance/obj.pkl
-2026-11-16 21:29:34,779 - log_util.py[WARNING]: Getting data from <class 'cloudinit.sources.DataSourceNone.DataSourceNone'> failed
-2026-11-16 21:29:34,787 - schema.py[WARNING]: datasource not detected, using default instance-data/user-data paths.
+2026-11-16 21:47:09,358 - sources[WARNING]: failed loading pickle in /var/lib/cloud/instance/obj.pkl: [Errno 13] Permission denied: '/var/lib/cloud/instance/obj.pkl'
+2026-11-16 21:47:09,360 - log_util.py[WARNING]: Failed pickling datasource to /var/lib/cloud/instance/obj.pkl
+2026-11-16 21:47:09,361 - log_util.py[WARNING]: Getting data from <class 'cloudinit.sources.DataSourceNone.DataSourceNone'> failed
+2026-11-16 21:47:09,369 - schema.py[WARNING]: datasource not detected, using default instance-data/user-data paths.
 Valid schema build/cloud-init.rendered.yaml
 
 ==> Expiry-tag carriers and state-to-Azure mapping tests
@@ -105,7 +105,7 @@ test_fixture_contains_every_workload_resource (__main__.MappingCoversTheConfigur
 test_only_exact_real_utc_times (__main__.ParseExpiry) ... ok
 
 ----------------------------------------------------------------------
-Ran 23 tests in 0.083s
+Ran 23 tests in 0.071s
 
 OK
 
@@ -120,9 +120,14 @@ PASS: env file is parsed, never executed (command substitution stays inert)
 PASS: mutable tag instead of digest -> refuses to pull
 PASS: image from another namespace -> refuses to pull
 PASS: pulled image lacks the planned digest -> not run
-PASS: guest app stop (timer): stops app, deletes data, never touches Azure
+PASS: guest app stop (timer): removes, verifies absence, never touches Azure
+PASS: guest app stop: already absent -> success after verification
+PASS: guest app stop: container removal fails and it remains -> exit 1, no success
+PASS: guest app stop: volume removal fails and it remains -> exit 1
+PASS: guest app stop: Docker unreachable -> cannot verify, exit 1
+PASS: boot after expiry with a failed removal -> app service fails (exit 1)
 
-Guest expiry tests: 11/11 passed
+Guest expiry tests: 16/16 passed
 
 ==> Lifetime gates: plan expiry, pre-apply, pre-window, 02:00 UK / 03:30 UTC
 test_rejected (__main__.BadInput) ... ok
@@ -146,7 +151,7 @@ test_window_refused_before_auto_shutdown (__main__.PreWindow) ... ok
 test_window_starts_only_if_it_fits_in_full (__main__.PreWindow) ... ok
 
 ----------------------------------------------------------------------
-Ran 19 tests in 0.040s
+Ran 19 tests in 0.039s
 
 OK
 
@@ -178,7 +183,7 @@ test_sweep_unmanaged_resource_in_group (__main__.GuardedDestroy) ... ok
 test_sweep_unreadable_state_json (__main__.GuardedDestroy) ... ok
 
 ----------------------------------------------------------------------
-Ran 23 tests in 0.872s
+Ran 23 tests in 0.871s
 
 OK
 
@@ -197,7 +202,7 @@ test_stopped_before_apply (__main__.Report) ... ok
 test_window_refused_fails_the_run (__main__.Report) ... ok
 
 ----------------------------------------------------------------------
-Ran 12 tests in 0.161s
+Ran 12 tests in 0.174s
 
 OK
 
@@ -457,14 +462,14 @@ Building atlas-tickets:local-test, atlas-tickets:local-test-broken-ignore-status
 == Unit tests (inside the image)
 .............
 ----------------------------------------------------------------------
-Ran 13 tests in 0.080s
+Ran 13 tests in 0.082s
 
 OK
 PASS: unit tests pass
 == Container
 PASS: /health returns ok
 PASS: /version reports variant healthy
-PASS: /version reports revision 7f732bdf6d80
+PASS: /version reports revision a7e30d2e4b1a
 PASS: image label atlas.variant=healthy (got healthy)
 PASS: container runs as non-root (uid 10001)
 PASS: root filesystem is read-only

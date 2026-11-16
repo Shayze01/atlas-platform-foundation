@@ -540,7 +540,7 @@ Raw output: [`evidence/offline-validate-2026-11-16-m3-stage3.log`](evidence/offl
 | `terraform test`: digest-only `app_image`, variant, exact real-UTC `expires_at`, `ExpiresAt`/`AppVariant` tags, cloud-init pins image and expiry | 23/23 (6 new rejections) |
 | Rendered cloud-init: embedded scripts byte-for-byte, env file, timer `OnCalendar` in UTC with `Persistent=true`, no build/tag, 5.4 KB; schema valid | 10/10 |
 | Expiry-tag carriers and state-to-Azure mapping on a complete deployment (all rules, association, managed OS disk), drift guard against the `.tf` files, every protect-on-uncertainty case | 23/23 |
-| Guest scripts: past expiry never starts the app and deletes data; a pull spanning the expiry never starts it; malformed/impossible/missing expiry, tag, foreign namespace, digest mismatch refused; env file never executed | 11/11 (after the Devin Review fix `2db655f`; 10/10 in the Stage 3 log) |
+| Guest scripts: past expiry never starts the app and deletes data; a pull spanning the expiry never starts it; malformed/impossible/missing expiry, tag, foreign namespace, digest mismatch refused; env file never executed; guest app stop succeeds only after Docker confirms the container and volume are absent (already absent OK; failed removal, stuck volume or unreachable Docker exit 1, no marker) | 16/16 |
 | Plan policy (14 checks) incl. fault build refused for `healthy`, healthy refused for the failure scenario, cap, missing carrier tag, cloud-init mismatch; `azure-validate` digest/timer/variant checks | script tests 158/158 |
 
 ## 14. Milestone 3 Stage 4: workflows, lifetime gates, guarded cleanup, sweep, report (executed 2026-11-16, offline)
@@ -549,11 +549,11 @@ Raw output: [`evidence/offline-validate-2026-11-16-m3-stage4.log`](evidence/offl
 
 | Owner requirement (2026-11-16) | Test | Result |
 | --- | --- | --- |
-| 1. Full safety margin; recheck before the window; never shorten it | `tests/lifetime/test_lifetime.py` (95 min left passes, 94 refused; window at exactly 60 min passes, 59 refused; no "shortened" output; start inside 03:20-03:30 UTC refused) | 19/19 (18/18 in the Stage 4 log) |
+| 1. Full safety margin; recheck before the window; never shorten it | `tests/lifetime/test_lifetime.py` (95 min left passes, 94 refused; window at exactly 60 min passes, 59 refused; no "shortened" output; start inside 03:20-03:30 UTC refused) | 19/19 |
 | 2. 02:00 UK auto-shutdown and 03:30 UTC Destroy with time-zone conversion | same file: GMT 02:00 UTC vs BST 01:00 UTC at the same clock time, spring-forward and autumn-back nights, 03:20 UTC guard, constants match `variables.tf` and the cron | included above |
-| 3. Carriers/mapping, protect on uncertainty | `tests/expiry/test_guarded_destroy.py`: every revision 2 section 6.3 row incl. state lock; destroy only on DESTROY; no call to the backend, identities or group delete; an equal ExpiresAt without an apply attempt is protected | 23/23 (22/22 in the Stage 4 log) |
+| 3. Carriers/mapping, protect on uncertainty | `tests/expiry/test_guarded_destroy.py`: every revision 2 section 6.3 row incl. state lock; destroy only on DESTROY; no call to the backend, identities or group delete; an equal ExpiresAt without an apply attempt is protected | 23/23 |
 | 4. Stopped before apply vs apply attempted; rejected plan keeps a pre-existing unexpired environment | `test_rejected_plan_never_destroys_a_preexisting_unexpired_environment` (+ NOOP, own-expiry, attempted, uncertain cases); workflow policy enforces marker/gate order and catches a mutated unconditional destroy | PASS |
-| Separate application/cleanup results | `tests/expiry/test_run_report.py` (incl. failed deployment check with passing tests = FAILED) | 12/12 (11/11 in the Stage 4 log) |
+| Separate application/cleanup results | `tests/expiry/test_run_report.py` (incl. failed deployment check with passing tests = FAILED) | 12/12 |
 | Image build and inspection window scripts | `tests/scripts/test-ci-helpers.sh` (stub docker, fake clock) | 11/11 |
 | Private URL, no `continue-on-error`, packages scope, gate/window order, guarded cleanup wiring | workflow policy tests (13 new rules + 2 controls) | PASS |
 
@@ -580,3 +580,21 @@ Docs-only stage. The full offline suite was re-run on this branch; raw output: [
 - **Safety nets:** the auto-shutdown and the nightly Destroy.
 - **Tests and mapping:** Playwright from the runner, and `az resource list` matching the mapping fixture.
 - **Costs:** billing data.
+
+## 16. Pre-merge fixes (2026-11-16, offline)
+
+Owner review before merging, carried up through the stacked branches:
+
+| Fix | Branch | Test | Result |
+| --- | --- | --- | --- |
+| `atlas-expire.sh` reports success only after Docker confirms the `atlas-tickets` container and `atlas-tickets-data` volume are absent. Removal or verification failure exits 1 and writes no expired marker; the boot-time path in `run-tickets.sh` propagates it | Stage 3 (#8) | `tests/scripts/test-guest-expiry.sh`: normal removal, already absent, container removal fails, volume stuck, Docker unreachable, boot after expiry with a failed removal | 16/16 |
+| Tracked `scripts/ci/__pycache__/plan_policy.cpython-310.pyc` removed; `.gitignore` keeps `__pycache__/` and `*.pyc` | Stage 2 (#7) | `git ls-files` has no `.pyc` on any branch | PASS |
+| Devin Review fixes from #8 (expiry recheck around `docker run`) and #9 (equal ExpiresAt not ownership, "Deployment job" report row, 03:20-03:30 UTC band) | #8, #9 | sections 13-14 | PASS |
+
+The full offline suite was re-run on each branch and the evidence logs replaced:
+- Stage 3: 15 passed, 0 failed.
+- Stage 4: 19 passed, 0 failed.
+- Stage 5: 19 passed, 0 failed.
+
+The guest app stop and its failure exit are **not live-tested**.
+
