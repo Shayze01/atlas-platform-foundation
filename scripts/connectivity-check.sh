@@ -18,7 +18,7 @@ cd "$(dirname "$0")/.." || exit 2
 SSH_KEY="${SSH_KEY:-$HOME/.ssh/atlas_admin}"
 CONNECT_TIMEOUT="${CONNECT_TIMEOUT:-10}"
 HTTP_TIMEOUT="${HTTP_TIMEOUT:-10}"
-CONTAINER_NAME="atlas-web"
+CONTAINER_NAME="atlas-tickets"
 
 passed=0
 failed=0
@@ -85,7 +85,7 @@ http_check() {
     fail "GET ${path} body does not contain ${what} (got: $(first_line "${WORK}/body"))"
   fi
 }
-http_check "/"       'Atlas Platform Foundation' "'Atlas Platform Foundation'"
+http_check "/"       'Atlas Service Desk' "'Atlas Service Desk'"
 http_check "/health" '"status": *"ok"'           '"status":"ok"'
 
 # ---------------------------------------------------------------- SSH

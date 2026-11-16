@@ -1,0 +1,210 @@
+{
+  "format_version": "1.0",
+  "terraform_version": "1.9.8",
+  "values": {
+    "outputs": {},
+    "root_module": {
+      "resources": [
+        {
+          "address": "data.azurerm_resource_group.existing[0]",
+          "mode": "data",
+          "type": "azurerm_resource_group",
+          "name": "existing",
+          "values": {
+            "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-atlas-foundation-dev",
+            "name": "rg-atlas-foundation-dev"
+          },
+          "index": 0
+        }
+      ],
+      "child_modules": [
+        {
+          "address": "module.networking",
+          "resources": [
+            {
+              "address": "module.networking.azurerm_virtual_network.this",
+              "mode": "managed",
+              "type": "azurerm_virtual_network",
+              "name": "this",
+              "values": {
+                "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-atlas-foundation-dev/providers/Microsoft.Network/virtualNetworks/vnet-atlas-foundation-dev",
+                "name": "vnet-atlas-foundation-dev",
+                "tags": {
+                  "Project": "atlas-foundation",
+                  "Environment": "dev",
+                  "Owner": "<owner>",
+                  "ManagedBy": "Terraform",
+                  "ExpiresAt": "2026-11-16T22:35:00Z",
+                  "AppVariant": "healthy"
+                }
+              }
+            },
+            {
+              "address": "module.networking.azurerm_subnet.workload",
+              "mode": "managed",
+              "type": "azurerm_subnet",
+              "name": "workload",
+              "values": {
+                "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-atlas-foundation-dev/providers/Microsoft.Network/virtualNetworks/vnet-atlas-foundation-dev/subnets/snet-workload",
+                "name": "snet-workload"
+              }
+            },
+            {
+              "address": "module.networking.azurerm_network_security_group.workload",
+              "mode": "managed",
+              "type": "azurerm_network_security_group",
+              "name": "workload",
+              "values": {
+                "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-atlas-foundation-dev/providers/Microsoft.Network/networkSecurityGroups/nsg-atlas-foundation-dev",
+                "name": "nsg-atlas-foundation-dev",
+                "tags": {
+                  "Project": "atlas-foundation",
+                  "Environment": "dev",
+                  "Owner": "<owner>",
+                  "ManagedBy": "Terraform",
+                  "ExpiresAt": "2026-11-16T22:35:00Z",
+                  "AppVariant": "healthy"
+                }
+              }
+            },
+            {
+              "address": "module.networking.azurerm_network_security_rule.allow_ssh_from_admin",
+              "mode": "managed",
+              "type": "azurerm_network_security_rule",
+              "name": "allow_ssh_from_admin",
+              "values": {
+                "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-atlas-foundation-dev/providers/Microsoft.Network/networkSecurityGroups/nsg-atlas-foundation-dev/securityRules/Allow-SSH-From-Admin",
+                "name": "Allow-SSH-From-Admin"
+              }
+            },
+            {
+              "address": "module.networking.azurerm_network_security_rule.allow_http_from_admin",
+              "mode": "managed",
+              "type": "azurerm_network_security_rule",
+              "name": "allow_http_from_admin",
+              "values": {
+                "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-atlas-foundation-dev/providers/Microsoft.Network/networkSecurityGroups/nsg-atlas-foundation-dev/securityRules/Allow-HTTP-From-Admin",
+                "name": "Allow-HTTP-From-Admin"
+              }
+            },
+            {
+              "address": "module.networking.azurerm_network_security_rule.allow_test_sources[0]",
+              "mode": "managed",
+              "type": "azurerm_network_security_rule",
+              "name": "allow_test_sources",
+              "values": {
+                "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-atlas-foundation-dev/providers/Microsoft.Network/networkSecurityGroups/nsg-atlas-foundation-dev/securityRules/Allow-SSH-HTTP-From-Test-Temporary",
+                "name": "Allow-SSH-HTTP-From-Test-Temporary"
+              },
+              "index": 0
+            },
+            {
+              "address": "module.networking.azurerm_network_security_rule.deny_internet_inbound",
+              "mode": "managed",
+              "type": "azurerm_network_security_rule",
+              "name": "deny_internet_inbound",
+              "values": {
+                "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-atlas-foundation-dev/providers/Microsoft.Network/networkSecurityGroups/nsg-atlas-foundation-dev/securityRules/Deny-Internet-Inbound",
+                "name": "Deny-Internet-Inbound"
+              }
+            },
+            {
+              "address": "module.networking.azurerm_subnet_network_security_group_association.workload",
+              "mode": "managed",
+              "type": "azurerm_subnet_network_security_group_association",
+              "name": "workload",
+              "values": {
+                "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-atlas-foundation-dev/providers/Microsoft.Network/virtualNetworks/vnet-atlas-foundation-dev/subnets/snet-workload",
+                "subnet_id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-atlas-foundation-dev/providers/Microsoft.Network/virtualNetworks/vnet-atlas-foundation-dev/subnets/snet-workload",
+                "network_security_group_id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-atlas-foundation-dev/providers/Microsoft.Network/networkSecurityGroups/nsg-atlas-foundation-dev"
+              }
+            }
+          ]
+        },
+        {
+          "address": "module.compute",
+          "resources": [
+            {
+              "address": "module.compute.azurerm_public_ip.vm",
+              "mode": "managed",
+              "type": "azurerm_public_ip",
+              "name": "vm",
+              "values": {
+                "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-atlas-foundation-dev/providers/Microsoft.Network/publicIPAddresses/pip-atlas-foundation-dev",
+                "name": "pip-atlas-foundation-dev",
+                "tags": {
+                  "Project": "atlas-foundation",
+                  "Environment": "dev",
+                  "Owner": "<owner>",
+                  "ManagedBy": "Terraform",
+                  "ExpiresAt": "2026-11-16T22:35:00Z",
+                  "AppVariant": "healthy"
+                }
+              }
+            },
+            {
+              "address": "module.compute.azurerm_network_interface.vm",
+              "mode": "managed",
+              "type": "azurerm_network_interface",
+              "name": "vm",
+              "values": {
+                "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-atlas-foundation-dev/providers/Microsoft.Network/networkInterfaces/nic-atlas-foundation-dev",
+                "name": "nic-atlas-foundation-dev",
+                "tags": {
+                  "Project": "atlas-foundation",
+                  "Environment": "dev",
+                  "Owner": "<owner>",
+                  "ManagedBy": "Terraform",
+                  "ExpiresAt": "2026-11-16T22:35:00Z",
+                  "AppVariant": "healthy"
+                }
+              }
+            },
+            {
+              "address": "module.compute.azurerm_linux_virtual_machine.this",
+              "mode": "managed",
+              "type": "azurerm_linux_virtual_machine",
+              "name": "this",
+              "values": {
+                "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-atlas-foundation-dev/providers/Microsoft.Compute/virtualMachines/vm-atlas-foundation-dev",
+                "name": "vm-atlas-foundation-dev",
+                "tags": {
+                  "Project": "atlas-foundation",
+                  "Environment": "dev",
+                  "Owner": "<owner>",
+                  "ManagedBy": "Terraform",
+                  "ExpiresAt": "2026-11-16T22:35:00Z",
+                  "AppVariant": "healthy"
+                },
+                "os_disk": [
+                  {
+                    "name": "osdisk-atlas-foundation-dev",
+                    "storage_account_type": "Standard_LRS"
+                  }
+                ]
+              }
+            },
+            {
+              "address": "module.compute.azurerm_dev_test_global_vm_shutdown_schedule.this[0]",
+              "mode": "managed",
+              "type": "azurerm_dev_test_global_vm_shutdown_schedule",
+              "name": "this",
+              "values": {
+                "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-atlas-foundation-dev/providers/Microsoft.DevTestLab/schedules/shutdown-computevm-vm-atlas-foundation-dev",
+                "tags": {
+                  "Project": "atlas-foundation",
+                  "Environment": "dev",
+                  "Owner": "<owner>",
+                  "ManagedBy": "Terraform",
+                  "ExpiresAt": "2026-11-16T22:35:00Z",
+                  "AppVariant": "healthy"
+                }
+              },
+              "index": 0
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

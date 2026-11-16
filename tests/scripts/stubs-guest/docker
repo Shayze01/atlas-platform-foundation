@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Stub docker for guest expiry tests.
+# DOCKER_DIGEST_SCENARIO: match | mismatch      DOCKER_PULL_SECONDS: delay the pull
+# DOCKER_EXPIRE_SCENARIO: ok | absent | rm-fail | volume-stuck | daemon-down
+echo "docker $*" >>"${STUB_LOG:?}"
+s="${DOCKER_EXPIRE_SCENARIO:-ok}"
+if [[ "${s}" == daemon-down ]]; then
+  echo "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?" >&2; exit 1
+fi
+[[ "$1" == pull && -n "${DOCKER_PULL_SECONDS:-}" ]] && sleep "${DOCKER_PULL_SECONDS}"
+case "$1 $2" in
+  "image inspect")
+    img="${*: -1}"
+    if [[ "${DOCKER_DIGEST_SCENARIO:-match}" == match ]]; then echo "${img}"; else echo "ghcr.io/shayze01/atlas-tickets@sha256:$(printf 'f%.0s' {1..64})"; fi ;;
+  "rm -f")
+    [[ "${s}" == rm-fail ]] && { echo "Error response from daemon: could not kill atlas-tickets: permission denied" >&2; exit 1; }
+    [[ "${s}" == absent ]] && { echo "Error response from daemon: No such container: atlas-tickets" >&2; exit 1; } ;;
+  "volume rm")
+    [[ "${s}" == volume-stuck ]] && { echo "Error response from daemon: remove atlas-tickets-data: volume is in use" >&2; exit 1; } ;;
+  "container inspect")
+    [[ "${s}" == rm-fail ]] && { echo '[{"Name":"/atlas-tickets"}]'; exit 0; }
+    echo "Error: No such container: atlas-tickets" >&2; exit 1 ;;
+  "volume inspect")
+    [[ "${s}" == volume-stuck ]] && { echo '[{"Name":"atlas-tickets-data"}]'; exit 0; }
+    echo "Error response from daemon: get atlas-tickets-data: no such volume" >&2; exit 1 ;;
+esac
+exit 0

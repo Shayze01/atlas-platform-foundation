@@ -2,12 +2,14 @@
 # Post-deployment validation that does NOT need the administrator's private key.
 #
 #   public   Public-endpoint checks from the machine running this script:
-#            HTTP status/body for / and /health, and a no-key SSH probe that must
+#            HTTP status/body for / and /health of the ticket app, /version
+#            reporting EXPECTED_APP_VARIANT, and a no-key SSH probe that must
 #            be refused with "Permission denied (publickey)". The source address
 #            must be allowed by the NSG.
 #   in-vm    Checks executed INSIDE the VM through Azure Run Command (Azure API,
-#            no SSH): cloud-init, container health, local /health, effective
-#            sshd configuration, installed admin key fingerprint and outbound IP.
+#            no SSH): cloud-init, container health, local /health, the running
+#            container's image digest (= EXPECTED_APP_IMAGE), the expiry timer,
+#            effective sshd configuration, installed admin key fingerprint and outbound IP.
 #   blocked  After the temporary test rule is removed: NSG rules must be exactly
 #            the intended set, and HTTP/SSH from this machine must no longer connect.
 #            Only a connect-phase timeout counts as "blocked" (an NSG deny silently
@@ -20,6 +22,8 @@
 # Environment:
 #   ADMIN_PUBKEY_FILE    .pub file whose fingerprint must be in authorized_keys (in-vm)
 #   EXPECTED_ADMIN_CIDR  admin /32 expected on the SSH/HTTP rules (blocked)
+#   EXPECTED_APP_VARIANT healthy | broken-ignore-status (public, required)
+#   EXPECTED_APP_IMAGE   ghcr.io/shayze01/atlas-tickets@sha256:<64 hex> (in-vm, required)
 #   CONNECT_TIMEOUT, HTTP_TIMEOUT  seconds (default 10)
 #
 # Exit codes: 0 all checks passed, 1 a check failed, 2 could not start or a check
@@ -30,7 +34,7 @@ cd "$(dirname "$0")/.." || exit 2
 MODE="${1:-}"
 CONNECT_TIMEOUT="${CONNECT_TIMEOUT:-10}"
 HTTP_TIMEOUT="${HTTP_TIMEOUT:-10}"
-CONTAINER_NAME="atlas-web"
+CONTAINER_NAME="atlas-tickets"
 
 passed=0
 failed=0
@@ -55,6 +59,14 @@ case "${MODE}" in
   public)  required_tools+=(ssh) ;;
   in-vm)   required_tools+=(az ssh-keygen) ;;
   blocked) required_tools+=(az timeout) ;;
+esac
+case "${MODE}" in
+  public)
+    [[ "${EXPECTED_APP_VARIANT:-}" =~ ^(healthy|broken-ignore-status)$ ]] ||
+      { echo "ERROR: set EXPECTED_APP_VARIANT to healthy or broken-ignore-status (got '${EXPECTED_APP_VARIANT:-}')"; exit 2; } ;;
+  in-vm)
+    [[ "${EXPECTED_APP_IMAGE:-}" =~ ^ghcr\.io/shayze01/atlas-tickets@sha256:[0-9a-f]{64}$ ]] ||
+      { echo "ERROR: set EXPECTED_APP_IMAGE to the deployed digest reference (got '${EXPECTED_APP_IMAGE:-}')"; exit 2; } ;;
 esac
 for t in "${required_tools[@]}"; do
   command -v "${t}" >/dev/null 2>&1 || { echo "ERROR: required tool '${t}' not found on PATH"; exit 2; }
@@ -90,8 +102,9 @@ http_check() {
 
 if [[ "${MODE}" == public ]]; then
   echo "Source address seen by the Internet: $(curl -4 -s --max-time "${HTTP_TIMEOUT}" https://api.ipify.org || echo unknown)"
-  http_check "/"       'Atlas Platform Foundation' "'Atlas Platform Foundation'"
-  http_check "/health" '"status": *"ok"' '"status":"ok"'
+  http_check "/"        'Atlas Service Desk' "'Atlas Service Desk'"
+  http_check "/health"  '"status": *"ok"' '"status":"ok"'
+  http_check "/version" "\"variant\": *\"${EXPECTED_APP_VARIANT}\"" "variant ${EXPECTED_APP_VARIANT}"
   probe="$(ssh -o "ConnectTimeout=${CONNECT_TIMEOUT}" -o StrictHostKeyChecking=accept-new -o BatchMode=yes \
              -o PubkeyAuthentication=no -o PreferredAuthentications=password,keyboard-interactive \
              "${USER_NAME}@${IP}" true 2>&1)"
@@ -119,6 +132,8 @@ echo "CLOUD_INIT=\$(cloud-init status 2>&1 | head -n 1)"
 echo "CONTAINER_HEALTH=\$(docker inspect -f '{{.State.Health.Status}}' ${CONTAINER_NAME} 2>&1 | head -n 1)"
 echo "LOCAL_HEALTH_CODE=\$(curl -s -o /tmp/atlas-health -w '%{http_code}' --max-time 5 http://127.0.0.1/health)"
 echo "LOCAL_HEALTH_BODY=\$(tr -d '\n' </tmp/atlas-health 2>/dev/null)"
+echo "RUNNING_IMAGE_DIGESTS=\$(docker image inspect -f '{{join .RepoDigests ","}}' "\$(docker inspect -f '{{.Image}}' ${CONTAINER_NAME} 2>/dev/null)" 2>/dev/null)"
+echo "EXPIRY_TIMER=\$(systemctl is-active atlas-expiry.timer 2>&1 | head -n 1)"
 install -d -m 0755 /run/sshd  # Ubuntu 24.04 socket activation: dir is absent until sshd first runs; sshd -T refuses without it
 sshd -T -C user=${USER_NAME},host=validation,addr=192.0.2.1 2>&1 | grep -E '^(passwordauthentication|kbdinteractiveauthentication|permitrootlogin|pubkeyauthentication) ' | awk '{print "SSHD_" \$1 "=" \$2}'
 echo "AUTHORIZED_KEY_FPS=\$(ssh-keygen -lf /home/${USER_NAME}/.ssh/authorized_keys 2>/dev/null | awk '{print \$2}' | paste -sd, -)"
@@ -138,6 +153,12 @@ SCRIPT
     expect CONTAINER_HEALTH "healthy" "container ${CONTAINER_NAME} healthy"
     expect LOCAL_HEALTH_CODE "200" "local /health returns HTTP 200"
     if grep -qE '"status": *"ok"' <<<"$(val LOCAL_HEALTH_BODY)"; then pass "in-VM: local /health body contains \"status\":\"ok\""; else fail "in-VM: local /health body is '$(val LOCAL_HEALTH_BODY)'"; fi
+    if [[ ",$(val RUNNING_IMAGE_DIGESTS)," == *",${EXPECTED_APP_IMAGE},"* ]]; then
+      pass "in-VM: running container image is exactly ${EXPECTED_APP_IMAGE}"
+    else
+      fail "in-VM: running container image digests '$(val RUNNING_IMAGE_DIGESTS)' do not include ${EXPECTED_APP_IMAGE}"
+    fi
+    expect EXPIRY_TIMER active "guest expiry timer armed"
     expect SSHD_passwordauthentication no "effective sshd: password authentication disabled"
     expect SSHD_kbdinteractiveauthentication no "effective sshd: keyboard-interactive disabled"
     expect SSHD_permitrootlogin no "effective sshd: root login disabled"

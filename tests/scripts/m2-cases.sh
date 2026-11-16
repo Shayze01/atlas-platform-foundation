@@ -197,6 +197,10 @@ run_case "backend-init: missing storage account variable -> exit 2" 2 ci/backend
 has "TFSTATE_STORAGE_ACCOUNT is not set"; done_case
 
 PLANF="${WORK}/tfplan"; echo "binary-plan-placeholder" >"${PLANF}"
+# Ticket-app policy inputs the deploy workflow passes; "now" is pinned so fixtures stay valid.
+EXPECTED_APP_IMAGE="ghcr.io/shayze01/atlas-tickets@sha256:$(printf 'a1%.0s' {1..32})"
+export EXPECTED_APP_IMAGE
+export EXPECTED_APP_VARIANT=healthy ATLAS_POLICY_NOW=2026-11-16T21:00:00Z
 PSHA="$(sha256sum "${PLANF}" | cut -d' ' -f1)"
 run_case "plan-summary: addresses/actions/counts only, no values; writes outputs -> exit 0" 0 ci/plan-summary.sh \
   PATH="${M2PATH}" GITHUB_OUTPUT="${WORK}/gh_output" -- "${PLANF}"
@@ -215,22 +219,24 @@ has_details() {
   has "\\| Password authentication \\| disabled \\|"; has "\\| Auto-shutdown \\| enabled, 0200 \`GMT Standard Time\` \\|"
   has "\\| Inbound allow rules \\| 2: port 22 from 1 source\\(s\\); port 80 from 1 source\\(s\\) \\|"
 }
-run_case "plan-summary: allowlisted details + 9 policy checks pass, no private values" 0 ci/plan-summary.sh \
+run_case "plan-summary: allowlisted details + 14 policy checks pass, no private values" 0 ci/plan-summary.sh \
   PATH="${M2PATH}" GITHUB_OUTPUT="${WORK}/gh_output3" -- "${PLANF}"
-has_details; has "Policy checks: 9 passed"; count "\\| PASS \\|" 9
+has_details; has "Policy checks: 14 passed"; count "\\| PASS \\|" 14
+has "\\| App image \\| \`${EXPECTED_APP_IMAGE}\` \\|"; has "\\| App variant \\| \`healthy\` \\|"
+has "\\| Expires at \\(UTC\\) \\| \`2026-11-16T22:35:00Z\` \\|"; has "95 min ahead \\(cap 180 min\\)"
 lacks "203\\.0\\.113"; lacks "52\\.142"; lacks "AAAAC3Nz"; lacks "atlasadmin"; lacks "I2Nsb3Vk"
 grep -qx "has_changes=true" "${WORK}/gh_output3" || note "outputs not written for a compliant plan"
 done_case
 
 run_case "plan-summary: no-change plan still evaluated against planned values" 0 ci/plan-summary.sh \
   PATH="${M2PATH}" PLAN_SCENARIO=nochanges -- "${PLANF}"
-has "No changes."; has "Policy checks: 9 passed"; done_case
+has "No changes."; has "Policy checks: 14 passed"; done_case
 
 while IFS='|' read -r scen expect; do
   rm -f "${WORK}/gh_output_p"
   run_case "plan-summary policy: '${scen}' fails closed -> exit 1, no outputs, not offered for approval" 1 ci/plan-summary.sh \
     PATH="${M2PATH}" PLAN_SCENARIO="${scen}" GITHUB_OUTPUT="${WORK}/gh_output_p" -- "${PLANF}"
-  has "POLICY FAILED"; has "${expect}"; lacks "203\\.0\\.113"; lacks "192\\.0\\.2\\.44"; lacks "Policy checks: 9 passed"
+  has "POLICY FAILED"; has "${expect}"; lacks "203\\.0\\.113"; lacks "192\\.0\\.2\\.44"; lacks "Policy checks: 14 passed"
   [[ ! -s "${WORK}/gh_output_p" ]] || note "plan outputs written despite policy failure"
   done_case
 done <<'CASES'
@@ -247,7 +253,28 @@ no-shutdown|\| Daily auto-shutdown at the approved UK time \| FAIL \|
 wrong-shutdown|enabled at 2300 GMT Standard Time
 implicit-outbound|\| No implicit outbound access \| FAIL \|
 no-planned-values|\| planned_values present \| UNEVALUABLE \|
+broken-variant|\| Image variant matches the scenario.*\| FAIL \| `broken-ignore-status` \(scenario requires `healthy`\)
+image-tag|\| App image is this repo's GHCR image.*\| FAIL \| not ghcr.io/shayze01/atlas-tickets@sha256
+image-other|\| App image is this repo's GHCR image.*\| FAIL \| differs from the digest built for this run
+expiry-too-far|\| Expiry is valid.*\| FAIL \| 240 min ahead, beyond the 180 min cap
+expiry-past|\| Expiry is valid.*\| FAIL \| already expired
+expiry-malformed|\| Expiry is valid.*\| FAIL \| expires_at is not an exact real UTC time
+missing-expiry-tag|\| Every expiry-tag carrier is tagged.*\| FAIL \| 1 carrier\(s\) without ExpiresAt = expires_at: `module.compute.azurerm_public_ip.vm`
+cloud-init-mismatch|\| cloud-init pins the planned image digest and expiry \| FAIL \|
+no-app-image|\| App image is this repo's GHCR image.*\| UNEVALUABLE \| value `var.app_image`
 CASES
+
+run_case "plan-summary policy: fault build refused for the healthy scenario, accepted only for the failure scenario" 0 ci/plan-summary.sh \
+  PATH="${M2PATH}" PLAN_SCENARIO=broken-variant EXPECTED_APP_VARIANT=broken-ignore-status -- "${PLANF}"
+has "\\| App variant \\| \`broken-ignore-status\` \\|"; has "Policy checks: 14 passed"; done_case
+
+run_case "plan-summary policy: healthy image refused for the failure scenario -> exit 1" 1 ci/plan-summary.sh \
+  PATH="${M2PATH}" EXPECTED_APP_VARIANT=broken-ignore-status -- "${PLANF}"
+has "\\| Image variant matches the scenario.*\\| FAIL \\| \`healthy\` \\(scenario requires \`broken-ignore-status\`\\)"; done_case
+
+run_case "plan-summary policy: EXPECTED_APP_IMAGE/VARIANT unset -> unevaluable, exit 1" 1 ci/plan-summary.sh \
+  PATH="${M2PATH}" EXPECTED_APP_IMAGE= EXPECTED_APP_VARIANT= -- "${PLANF}"
+has "UNEVALUABLE \\| value \`EXPECTED_APP_IMAGE"; has "UNEVALUABLE \\| value \`EXPECTED_APP_VARIANT"; done_case
 
 run_case "plan-summary: unreadable plan -> exit 2" 2 ci/plan-summary.sh PATH="${M2PATH}" PLAN_SCENARIO=showfail -- "${PLANF}"
 has "terraform show -json' failed"; done_case

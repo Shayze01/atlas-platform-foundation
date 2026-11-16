@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Stub curl for script tests.
-# CURL_SCENARIO: ok | health-500 | health-badbody | root-badbody | timeout | timeout-curl8 |
+# CURL_SCENARIO: ok | health-500 | health-badbody | root-badbody | version-broken | timeout | timeout-curl8 |
 #                op-timeout | refused | unreachable | badopt
 # CURL_CONTROL:  ok | fail   (the https://api.ipify.org / ifconfig.me lookup)
 # CURL_IP1 / CURL_IP2: addresses returned by api.ipify.org / ifconfig.me (default 198.51.100.7)
@@ -29,12 +29,15 @@ case "${scenario}" in
 esac
 code=200
 case "${url}" in
+  */version)
+    body='{"build_time":"2026-11-16T21:00:00Z","revision":"0123abc","variant":"healthy"}'
+    [[ "${scenario}" == version-broken ]] && body='{"build_time":"2026-11-16T21:00:00Z","revision":"0123abc","variant":"broken-ignore-status"}' ;;
   */health)
-    body='{"status":"ok","service":"atlas-platform-foundation"}'
+    body='{"status":"ok"}'
     [[ "${scenario}" == health-500 ]] && { code=500; body='<html>500 Internal Server Error</html>'; }
     [[ "${scenario}" == health-badbody ]] && body='{"status":"starting"}' ;;
   *)
-    body='<h1>Atlas Platform Foundation</h1>'
+    body='<title>Atlas Service Desk (demo)</title>'
     [[ "${scenario}" == root-badbody ]] && body='<h1>Welcome to nginx!</h1>' ;;
 esac
 if [[ -n "${out}" ]]; then printf '%s' "${body}" >"${out}"; else printf '%s' "${body}"; fi

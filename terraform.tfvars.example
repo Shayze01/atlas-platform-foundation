@@ -17,3 +17,9 @@ admin_ssh_public_key = "ssh-ed25519 AAAA...replace-with-your-public-key... atlas
 # Your current public IPv4 address with /32, e.g. from: curl -4 https://ifconfig.me
 # 203.0.113.10 is a reserved documentation address - replace it.
 admin_source_ip_cidr = "203.0.113.10/32"
+
+# Milestone 3: the exact ticket-app image (by digest, never a tag), its variant and the
+# environment expiry (UTC). The deploy workflow sets all three; values here are examples.
+app_image   = "ghcr.io/shayze01/atlas-tickets@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+app_variant = "healthy"
+expires_at  = "2030-01-01T00:00:00Z"

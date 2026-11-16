@@ -32,3 +32,13 @@ output "auto_shutdown_schedule" {
   description = "Daily auto-shutdown (deallocate) time and time zone, or null if disabled."
   value       = module.compute.auto_shutdown_schedule
 }
+
+output "app_image" {
+  description = "Exact image digest the VM was told to run (also checked in the VM and via /version)."
+  value       = var.app_image
+}
+
+output "expires_at" {
+  description = "Environment expiry (UTC): ExpiresAt tag value and guest app stop time. Not a guarantee that resources are deleted by then."
+  value       = var.expires_at
+}

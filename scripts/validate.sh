@@ -35,7 +35,7 @@ run_step "terraform init -backend=false" terraform init -backend=false -input=fa
 run_step "terraform validate" terraform validate -no-color
 run_step "terraform test (mocked provider, no Azure calls)" terraform test -no-color
 run_step "Render cloud-init" ./scripts/render-cloud-init.sh
-run_step "Rendered cloud-init embeds ./app files unchanged" python3 scripts/check-cloud-init-files.py
+run_step "Rendered cloud-init: exact image digest, expiry timer, embedded scripts" python3 scripts/check-cloud-init-files.py
 
 if command -v cloud-init >/dev/null 2>&1; then
   run_step "cloud-init schema validation" cloud-init schema --config-file build/cloud-init.rendered.yaml
@@ -43,6 +43,8 @@ else
   skip_step "cloud-init schema validation" "cloud-init not installed"
 fi
 
+run_step "Expiry-tag carriers and state-to-Azure mapping tests" python3 tests/expiry/test_expiry_map.py
+run_step "Guest expiry script tests (stubbed docker/systemctl)" ./tests/scripts/test-guest-expiry.sh
 run_step "Script behaviour tests (stubbed az/terraform/curl/ssh, no network)" ./tests/scripts/run-script-tests.sh
 
 if python3 -c 'import yaml' >/dev/null 2>&1; then
@@ -58,8 +60,8 @@ else
 fi
 
 if command -v shellcheck >/dev/null 2>&1; then
-  run_step "shellcheck" shellcheck app/run-container.sh scripts/*.sh scripts/ci/*.sh scripts/github/*.sh \
-    bootstrap/*.sh tests/scripts/*.sh tests/scripts/stubs/* tests/scripts/stubs-m2/*
+  run_step "shellcheck" shellcheck app/run-container.sh cloud-init/files/*.sh scripts/*.sh scripts/ci/*.sh scripts/github/*.sh \
+    bootstrap/*.sh tests/scripts/*.sh tests/scripts/stubs/* tests/scripts/stubs-m2/* tests/scripts/stubs-guest/*
 else
   skip_step "shellcheck" "shellcheck not installed"
 fi
