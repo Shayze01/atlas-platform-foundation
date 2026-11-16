@@ -185,7 +185,7 @@ class GuardedDestroy(unittest.TestCase):
                 rc, text, calls, out = self.run_mode("failure-cleanup", "2026-11-16T21:00:00Z",
                                                      APPLY_ATTEMPTED=attempted, OWN_EXPIRES_AT="2026-11-16T23:20:00Z")
                 self.assertEqual((rc, out["decision"], self.destroyed(calls)), (0, "PROTECT", False), text)
-                self.assertIn("pre-existing environment is unexpired", text)
+                self.assertIn("environment is unexpired", text)
 
     def test_stopped_before_apply_with_empty_group_is_noop(self):
         self.state, self.azure = EMPTY_STATE, []
@@ -201,9 +201,16 @@ class GuardedDestroy(unittest.TestCase):
         self.assertEqual((rc, out["result"]), (0, "DESTROYED"))
         self.assertNotIn("az resource list", calls)
 
-    def test_unknown_attempt_but_resources_carry_this_runs_expiry(self):
+    def test_same_expiry_as_this_run_is_not_proof_of_ownership(self):
+        """Two plans (e.g. different windows) can produce the same ExpiresAt: without an apply
+        attempt, an unexpired environment with this run's ExpiresAt is still protected."""
         rc, text, calls, out = self.run_mode("failure-cleanup", "2026-11-16T21:00:00Z", APPLY_ATTEMPTED="",
                                              OWN_EXPIRES_AT=EXP)
+        self.assertEqual((rc, out["decision"], self.destroyed(calls)), (0, "PROTECT", False))
+
+    def test_not_attempted_but_expired_is_destroyed(self):
+        rc, text, calls, out = self.run_mode("failure-cleanup", "2026-11-16T23:00:00Z", APPLY_ATTEMPTED="false",
+                                             OWN_EXPIRES_AT="2026-11-17T01:00:00Z")
         self.assertEqual((out["decision"], self.destroyed(calls)), ("DESTROY", True))
 
     def test_not_attempted_and_uncertain_tags_is_inconclusive(self):

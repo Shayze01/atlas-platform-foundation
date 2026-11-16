@@ -12,10 +12,10 @@ Modes
   failure-cleanup  deploy.yml after apply failed / was cancelled / was not approved:
                      APPLY_ATTEMPTED=true (this run started terraform apply)        -> DESTROY
                      otherwise (stopped before apply, plan rejected, hash mismatch,
-                     approval refused, or unknown), same rules as the sweep, except
-                     that resources carrying THIS run's ExpiresAt are this run's
-                     and are destroyed. A pre-existing unexpired environment is never
-                     destroyed by a run that did not attempt apply.
+                     approval refused, or unknown): exactly the sweep rules. An
+                     unexpired environment is never destroyed by a run that did not
+                     attempt apply - not even one whose ExpiresAt equals this run's,
+                     because two plans can produce the same ExpiresAt.
 
 Usage: expiry_decision.py --mode sweep|failure-cleanup --state STATE_JSON --azure AZURE_JSON
          [--resource-group RG] [--own-expires-at T] [--apply-attempted true|false|""] [--now T]
@@ -44,16 +44,14 @@ def decide(report, now, mode, own_expires=None, apply_attempted=""):
     exp = parse_expiry(exp_raw)
     if exp is None:
         return "INCONCLUSIVE", "protected - no single valid ExpiresAt"
-    if mode == "failure-cleanup" and own_expires and exp_raw == own_expires:
-        return "DESTROY", f"resources carry this run's ExpiresAt {exp_raw}"
     if exp - now > CAP:
         return "INCONCLUSIVE", f"protected - ExpiresAt {exp_raw} is more than {int(CAP.total_seconds() // 3600)} h ahead (beyond the cap)"
     if now >= exp + GRACE:
         return "DESTROY", f"expired at {exp_raw} (+15 min grace passed)"
     left = int((exp - now).total_seconds() // 60)
     if mode == "failure-cleanup":
-        return "PROTECT", (f"pre-existing environment is unexpired (ExpiresAt {exp_raw}, {left} min left) and this "
-                           "run did not attempt apply; left in place for its own cleanup")
+        return "PROTECT", (f"environment is unexpired (ExpiresAt {exp_raw}, {left} min left) and this run did not "
+                           "attempt apply; left in place for its own cleanup (in-job destroy, sweep, nightly Destroy)")
     return "PROTECT", f"unexpired (ExpiresAt {exp_raw}, {left} min left)"
 
 
