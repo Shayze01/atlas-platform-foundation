@@ -943,9 +943,9 @@ Implemented in reviewable stages (#6 merged; #7-#10 in review). **Offline-tested
   - plan policy for the image, variant and expiry;
   - Deploy with `scenario` and `inspection_minutes` (the old `keep-running` option is removed: expiry is mandatory);
   - two lifetime gates that never shorten the inspection window;
-  - guarded failure-cleanup that never destroys a pre-existing unexpired environment when apply was not attempted;
+  - guarded failure-cleanup that judges ownership from pre-/post-apply state snapshots and never destroys a pre-existing unexpired environment (uncertainty is INCONCLUSIVE);
   - an hourly expiry sweep;
   - a report with separate application and cleanup rows.
 - **Full guide:** [`docs/milestone-3.md`](docs/milestone-3.md).
-- **Offline results:** [`docs/validation-log.md`](docs/validation-log.md) sections 12-16.
+- **Offline results:** [`docs/validation-log.md`](docs/validation-log.md) sections 12-17.
 - **Not live-tested:** everything that needs Azure or GitHub scheduling (see the guide's last section).

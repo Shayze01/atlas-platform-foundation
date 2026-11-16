@@ -551,11 +551,11 @@ Raw output: [`evidence/offline-validate-2026-11-16-m3-stage4.log`](evidence/offl
 | --- | --- | --- |
 | 1. Full safety margin; recheck before the window; never shorten it | `tests/lifetime/test_lifetime.py` (95 min left passes, 94 refused; window at exactly 60 min passes, 59 refused; no "shortened" output; start inside 03:20-03:30 UTC refused) | 19/19 |
 | 2. 02:00 UK auto-shutdown and 03:30 UTC Destroy with time-zone conversion | same file: GMT 02:00 UTC vs BST 01:00 UTC at the same clock time, spring-forward and autumn-back nights, 03:20 UTC guard, constants match `variables.tf` and the cron | included above |
-| 3. Carriers/mapping, protect on uncertainty | `tests/expiry/test_guarded_destroy.py`: every revision 2 section 6.3 row incl. state lock; destroy only on DESTROY; no call to the backend, identities or group delete; an equal ExpiresAt without an apply attempt is protected | 23/23 |
-| 4. Stopped before apply vs apply attempted; rejected plan keeps a pre-existing unexpired environment | `test_rejected_plan_never_destroys_a_preexisting_unexpired_environment` (+ NOOP, own-expiry, attempted, uncertain cases); workflow policy enforces marker/gate order and catches a mutated unconditional destroy | PASS |
-| Separate application/cleanup results | `tests/expiry/test_run_report.py` (incl. failed deployment check with passing tests = FAILED) | 12/12 |
+| 3. Carriers/mapping, protect on uncertainty | `tests/expiry/test_guarded_destroy.py`: every revision 2 section 6.3 row incl. state lock; destroy only on DESTROY; no call to the backend, identities or group delete; an equal ExpiresAt without an apply attempt is protected; after an apply attempt, ownership from state snapshots (section 17) | 42/42 |
+| 4. Stopped before apply vs apply attempted; rejected plan keeps a pre-existing unexpired environment | `test_rejected_plan_never_destroys_a_preexisting_unexpired_environment` (+ NOOP, own-expiry, uncertain cases; apply-attempted cases in section 17); workflow policy enforces snapshot/marker/gate order and catches a mutated unconditional destroy | PASS |
+| Separate application/cleanup results | `tests/expiry/test_run_report.py` (incl. failed deployment check with passing tests = FAILED; no-change plan pass/fail, section 17) | 16/16 |
 | Image build and inspection window scripts | `tests/scripts/test-ci-helpers.sh` (stub docker, fake clock) | 11/11 |
-| Private URL, no `continue-on-error`, packages scope, gate/window order, guarded cleanup wiring | workflow policy tests (13 new rules + 2 controls) | PASS |
+| Private URL, no `continue-on-error`, packages scope, gate/window order, guarded cleanup wiring | workflow policy tests (15 new rules + 2 controls) | PASS |
 
 ## 15. Milestone 3 Stage 5: documentation (2026-11-16)
 
@@ -598,3 +598,33 @@ The full offline suite was re-run on each branch and the evidence logs replaced:
 
 The guest app stop and its failure exit are **not live-tested**.
 
+## 17. Devin Review fixes on #9: failed-apply ownership and no-change reports (2026-11-16, offline)
+
+Owner rules (2026-11-16): compare state lineage and serial before and after apply without treating an unchanged serial as proof Azure is untouched; protect pre-existing unexpired resources when apply is refused without changes; a changed serial alone never authorises destroying an existing environment; unreadable state, persistence failure or uncertain ownership is INCONCLUSIVE with recovery; a no-change plan reports the real test results.
+
+| Case | Test (`tests/expiry/test_guarded_destroy.py` unless stated) | Decision |
+| --- | --- | --- |
+| Stale plan, pre-existing unexpired environment | `test_stale_plan_protects_preexisting_unexpired_environment` | PROTECT, no destroy |
+| Lock rejection, pre-existing unexpired environment | `test_lock_rejection_protects_preexisting_unexpired_environment` | PROTECT, no destroy |
+| Refused apply, environment expired / state empty | `test_rejected_apply_with_expired_environment_follows_sweep_rules`, `test_rejected_apply_into_empty_state_is_noop` | DESTROY / NOOP |
+| Unchanged serial, but Azure has an unrecorded resource or a changed tag | `test_unchanged_serial_does_not_prove_azure_untouched` | INCONCLUSIVE |
+| Unchanged serial, state differs from the snapshot | `test_unchanged_serial_but_different_state_is_inconclusive` | INCONCLUSIVE |
+| Partial apply over a pre-existing unexpired environment (mixed tags) | `test_partial_apply_over_preexisting_unexpired_environment_is_inconclusive` | INCONCLUSIVE |
+| Changed serial, every carrier now this run's `ExpiresAt`, environment existed before | `test_changed_serial_alone_never_authorises_destroying_a_preexisting_environment` | INCONCLUSIVE |
+| Changed pre-existing environment that had itself expired | `test_changed_preexisting_environment_that_had_expired_is_destroyed` | DESTROY |
+| Fresh deployment (complete or partial) from an empty state with this run's `ExpiresAt` | `test_attempt_fresh_deployment_*`, `test_partial_apply_from_empty_state_destroys_only_what_it_created` | DESTROY + verify |
+| Partial apply from empty state, foreign `ExpiresAt` | `test_partial_apply_from_empty_state_with_foreign_expiry_is_inconclusive` | INCONCLUSIVE |
+| State persistence failure | `test_state_persistence_failure_is_inconclusive` | INCONCLUSIVE, manual recovery |
+| State read failure (`show`, `state pull`, invalid state) or Azure list failure | `test_state_read_failures_after_attempt_are_inconclusive` | INCONCLUSIVE |
+| Missing or invalid pre-apply snapshot; lineage replaced; serial backwards | `test_missing_or_bad_pre_apply_snapshot_is_inconclusive`, `test_replaced_state_lineage_or_older_serial_is_inconclusive` | INCONCLUSIVE |
+| Snapshot content: hashed lineage, addresses incl. indexes, data sources skipped, no state yet, invalid input | `StateSnapshot` (3 tests) | PASS |
+| No-change plan, both tests pass | `tests/expiry/test_run_report.py::test_no_change_plan_with_passing_tests_passes` | PASSED |
+| No-change plan, API flow fails | `test_no_change_plan_with_failing_test_fails` | FAILED |
+| No-change plan, tests pass but deployment check, window or cleanup fails | `test_no_change_plan_still_needs_deployment_window_and_cleanup` (4 sub-cases) | FAILED |
+| Workflow wiring: snapshot before the attempt marker, passed to failure-cleanup with the apply error; report gets `HAS_CHANGES` | `tests/workflows/test_workflow_policy.py` (2 new rules) | PASS |
+
+Terraform 1.9.8 locally (local backend, `terraform_data`, no Azure): a stale saved plan fails with "Saved plan is stale" and a held lock with "Error acquiring the state lock"; the serial stayed unchanged in both. These are the strings the workflow classifies.
+
+Totals: guarded cleanup 42/42 (was 23), report 16/16 (was 12). Full offline suite re-run on Stage 4 and Stage 5: 19 passed, 0 failed, 0 skipped (step count unchanged; the new tests are inside existing steps).
+
+**Not live-tested:** the pre-apply snapshot with the `azure-deploy` identity, apply-error classification against the Azure backend, and every failure-cleanup decision above against real Azure.

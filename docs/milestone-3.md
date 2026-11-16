@@ -21,12 +21,13 @@ plan         (azure-plan) ExpiresAt = now + 45 min approval allowance + budget
                           -> terraform plan -> 14 fail-closed policy checks -> sanitised summary
              (approval)   owner reviews digest, variant, ExpiresAt, policy -> approves azure-deploy
 apply        (azure-deploy) gate 1 (full budget incl. margin, safety nets) -> fetch plan, verify SHA-256
-                          -> attempted=true -> terraform apply -> mask address -> runner /32
+                          -> pre-apply state snapshot -> attempted=true -> terraform apply -> mask address -> runner /32
                           -> public + in-VM checks (digest, expiry timer) -> API flow test -> browser test
                           -> remove runner /32 (always) -> confirm blocked
                           -> gate 2 -> inspection window (full or not at all) -> destroy + verify
-failure-cleanup (azure-destroy) guarded destroy: only what this run attempted to apply
+failure-cleanup (azure-destroy) guarded destroy: only what this run provably created (state snapshots + Azure)
 report       (no Azure)   Application / Inspection / Cleanup / Run result rows; fails unless the app passed
+                          (a no-change plan reports the real test results against the existing workload)
 ```
 
 Inputs: `scenario` = `healthy` (default) or `deliberate-failure-ignore-status`;
@@ -74,9 +75,12 @@ deallocated) until removed by hand: see the manual recovery in the design, secti
   - **destroys** only when every carrier has the same valid `ExpiresAt`, state and Azure agree, and `ExpiresAt` + 15 min has passed;
   - **protects** (INCONCLUSIVE, the run fails) on any missing, malformed, conflicting or mismatched tag, an expiry more than 3 h ahead, a state↔Azure difference, a read error or a state lock.
 - **failure-cleanup:**
-  - **destroys** when this run attempted apply;
-  - otherwise applies exactly the sweep rules (destroys only expired environments);
-  - **never** destroys an unexpired environment when apply was not attempted (an equal `ExpiresAt` is not proof of ownership).
+  - apply **not attempted**: exactly the sweep rules (destroys only expired environments; an equal `ExpiresAt` is not proof of ownership);
+  - apply **attempted**: the attempt alone proves nothing. A pre-apply state snapshot (lineage hash, serial, addresses, `ExpiresAt`) is compared with the current state and Azure:
+    - Terraform recorded no change (lock rejection, stale plan): the sweep rules, so an unexpired environment is **protected**; unrecorded Azure changes are still caught as state↔Azure differences;
+    - created from an empty state with this run's `ExpiresAt`: **destroyed**;
+    - changed a pre-existing environment: destroyed only if that environment had already expired, otherwise **INCONCLUSIVE** (a changed serial alone never authorises it);
+    - state unreadable, persistence failed, lineage changed, serial backwards, mixed tags or any mismatch: **INCONCLUSIVE**, the job fails and manual recovery is needed (design section 12).
 - **Scope:** only `rg-atlas-foundation-dev`. It never touches the state backend, the identities or the group itself.
 
 ## Private URL and network access

@@ -140,7 +140,7 @@ flowchart LR
 | **Expiry (`ExpiresAt`)** | Fixed at plan time: `plan time + 45 min approval allowance + lifetime budget` (6.2). Capped at plan time + 3 h | - | Resource tag and cloud-init value | Fixed once planned. A late approval uses up the margin, not the window (6.2) |
 | **Inspection end** | `window start + inspection_minutes` (default 30, max 45). Window start is when the runner's access has been removed and checked | apply job | Window closes and in-job destroy starts | Only if the apply job is still alive. If it was cancelled or failed, see `failure-cleanup` |
 | **Guest app stop** | `ExpiresAt` | systemd timer on the VM | Stops the app container and deletes the ticket DB. The URL stops answering, while the VM is still billed | Runs only if cloud-init installed the timer and the VM is running. If the VM was deallocated and restarted after expiry, a boot-time check stops the app at start. Relies on the VM clock, which syncs with Azure time. Not live-tested (Run D deferred) |
-| **Resource cleanup** | (a) in-job destroy at inspection end, normally done within about 10 min; (b) `failure-cleanup` within minutes of a failure or cancel (guarded: it destroys only what this run attempted to apply, section 6.4); (c) the hourly sweep, eligible from `ExpiresAt + 15 min`; (d) the nightly Destroy at 03:30 UTC | GitHub Actions + Azure | Workload deleted; group, backend and identities kept | (a)/(b) need GitHub and Azure to be working. (c) can run late or be skipped by GitHub, and scheduled runs are disabled after 60 days without activity. (d) has the same limits. **No layer guarantees deletion by a given time** |
+| **Resource cleanup** | (a) in-job destroy at inspection end, normally done within about 10 min; (b) `failure-cleanup` within minutes of a failure or cancel (guarded: it destroys only what this run provably created, section 6.4); (c) the hourly sweep, eligible from `ExpiresAt + 15 min`; (d) the nightly Destroy at 03:30 UTC | GitHub Actions + Azure | Workload deleted; group, backend and identities kept | (a)/(b) need GitHub and Azure to be working. (c) can run late or be skipped by GitHub, and scheduled runs are disabled after 60 days without activity. (d) has the same limits. **No layer guarantees deletion by a given time** |
 
 **When the URL stops working:** at the first of guest app stop or resource cleanup that actually succeeds. Normally that's the in-job destroy at about inspection end + 10 min. If every layer fails, the URL can keep working for your IP until someone removes the resources by hand (section 12).
 
@@ -207,17 +207,32 @@ The sweep compares the carriers' Azure tags with each other and with the state t
 
 ### 6.4 failure-cleanup: "stopped before apply" vs "apply attempted"
 
-`apply` writes `attempted=true` in the step immediately before `terraform apply`. The pre-apply gate writes `stopped=true` when it refuses. `failure-cleanup` (`guarded-destroy.sh MODE=failure-cleanup`) then decides:
+The pre-apply gate writes `stopped=true` when it refuses. Just before `terraform apply`, `apply` records a **pre-apply state snapshot** (`scripts/ci/state_snapshot.py` on `terraform state pull`: SHA-256 of the lineage, serial, managed resource addresses and the carriers' `ExpiresAt`; no other attribute values), then `attempted=true`. If apply fails, its error is classified as `state-lock`, `stale-plan`, `state-persist-failed` (`errored.tfstate` or "Failed to persist/save state") or `other`. `failure-cleanup` (`guarded-destroy.sh MODE=failure-cleanup`) then decides.
+
+**Apply not attempted** (gate refused, approval rejected, hash mismatch, earlier failure, or unknown): exactly the sweep rules.
 
 | Situation | Decision |
 |---|---|
-| `APPLY_ATTEMPTED=true` (apply started, failed or was cancelled later) | **Destroy** + verify (this run touched the workload) |
 | Not attempted (gate refused, approval rejected, hash mismatch, earlier failure, or unknown) and group/state empty | No-op: this run created nothing |
 | Not attempted, an **unexpired** environment (even one whose `ExpiresAt` equals this run's: two plans can produce the same value) | **Protect**: left in place for its own cleanup (in-job destroy, sweep, nightly Destroy) |
 | Not attempted, expired + 15 min | Destroy (as the sweep would) |
 | Not attempted, any uncertainty (section 6.3 problems) | Protect, INCONCLUSIVE, job fails |
 
-A rejected plan therefore never triggers destruction of a pre-existing unexpired environment. Offline tests cover each row, including the rejected-plan case explicitly.
+**Apply attempted:** an attempt alone proves nothing. Terraform can refuse before changing anything (state lock, stale plan), and a changed serial says only that state was written, not whose resources these are. Cleanup reads the current state (`terraform show -json` and `terraform state pull`) and Azure, then compares them with the pre-apply snapshot:
+
+| Situation | Decision |
+|---|---|
+| State persistence failed; pre-apply snapshot missing or invalid; current state or Azure unreadable; lineage changed; serial went backwards; any section 6.3 problem (mixed tags after a partial update, state↔Azure difference, unknown resource) | **INCONCLUSIVE**: protect, job fails, manual recovery (section 12) |
+| Serial unchanged and state equal to the snapshot (lock rejection, stale plan): Terraform recorded nothing | The sweep rules: **unexpired is protected**, expired + 15 min is destroyed, empty is a no-op. An unchanged serial is not taken as proof that Azure is untouched: an unrecorded Azure resource or changed tag is a section 6.3 problem, so INCONCLUSIVE |
+| Serial unchanged but addresses or `ExpiresAt` differ from the snapshot | INCONCLUSIVE |
+| Serial changed, pre-apply state empty, every carrier has this run's `ExpiresAt` (fresh deployment, including a partial one) | **Destroy** + verify: every resource was created by this run |
+| Serial changed, pre-apply state empty, carriers have another `ExpiresAt` | INCONCLUSIVE |
+| Serial changed over a **pre-existing** environment that had itself expired (+15 min) | Destroy (as the sweep would) |
+| Serial changed over a pre-existing **unexpired** environment (even when every carrier now has this run's `ExpiresAt`) | INCONCLUSIVE: a changed serial alone never authorises destroying it |
+
+A rejected plan or a refused apply therefore never triggers destruction of a pre-existing unexpired environment. Offline tests cover each row, including stale plan, lock rejection, partial apply, state-read and persistence failures, and an existing unexpired environment.
+
+**Limitation:** if the pre-apply snapshot step itself fails, apply is not attempted (cleanup follows the sweep rules). If apply is cancelled while Terraform is writing, the classification may be `other`; the comparison above still applies and protects on any doubt.
 
 **Rejected:** an Azure-side self-destruct (Automation or Logic App with a managed identity). It needs new role assignments and adds cost; it is future work.
 
@@ -266,6 +281,8 @@ A new final `report` job (`if: always()`) writes a table to the run summary. It 
 | Cleanup | PASS - via `failure-cleanup`: N destroyed, workload group empty, temporary rule absent |
 | Run result | **FAILED** |
 
+**No-change plan:** if the plan has no changes, `terraform apply` is skipped but the existing workload is still checked and tested. The Application tests row then shows the real API and browser results (marked "no-change plan"), not NOT RUN. PASSED still needs the Deployment job, the requested inspection window and cleanup rows to pass as for any other run.
+
 - **Run stays failed:** the apply job fails at the test step, so GitHub marks the run failed whatever cleanup does.
 - **`report` fails too:** the `report` job also exits 1 when the app tests didn't pass, as a second guard.
 - **Policy test:** an offline policy test asserts that no app-test step uses `continue-on-error`.
@@ -295,7 +312,7 @@ A new final `report` job (`if: always()`) writes a table to the run summary. It 
   - new policy checks for the image, its variant and the expiry cap.
 - **`apply`:**
   - starts with lifetime gate 1 (section 6.2): stop before the plan is downloaded if the remaining lifetime can't cover provisioning, tests, the full window, cleanup **and the full margin**, or if it would cross the 02:00 UK auto-shutdown (02:00 UTC in GMT, 01:00 UTC in BST) or 03:20 UTC;
-  - records `attempted=true` immediately before `terraform apply`;
+  - records a pre-apply state snapshot (lineage hash, serial, addresses, `ExpiresAt`), then `attempted=true`, immediately before `terraform apply`, and classifies an apply error (section 6.4);
   - rechecks with gate 2 before the inspection window, which is started in full or not at all;
   - masks the public IP as soon as Terraform outputs it, and never prints the URL;
   - adds the flow and Playwright tests;
@@ -348,7 +365,7 @@ A new final `report` job (`if: always()`) writes a table to the run summary. It 
 8. **Offline CI:** all existing and new checks pass, including test-the-test and the healthy-image-has-no-fault check.
 9. **Evidence:** sanitised, with no IPs, IDs, keys or owner tag. A search of each live run's public log and summary finds no public IP or URL. The URL is delivered only in this session.
 11. **Lifetime gates:** offline tests prove gate 1 stops before `terraform apply`, and gate 2 refuses (never shortens) the window, when the remaining lifetime is too short or would cross the 02:00 UK auto-shutdown (GMT/BST conversion) or 03:20 UTC.
-13. **Failure cleanup:** offline tests prove a run that did not attempt apply never destroys a pre-existing unexpired environment (section 6.4).
+13. **Failure cleanup:** offline tests prove a run that did not attempt apply, or whose apply was refused or partly changed a pre-existing environment, never destroys a pre-existing unexpired environment; uncertainty is INCONCLUSIVE (section 6.4).
 12. **Sweep:** offline tests cover every row of the section 6.3 table, and prove unexpired environments and the persistent resources are never touched.
 10. **Costs:** recorded as estimates until billing data is available.
 
@@ -439,5 +456,6 @@ You approve only after that. Run B is started only after Run A's cleanup has bee
 1. **Full safety margin, recheck before the window:** gate 1 requires the full budget including the 10-min margin; gate 2 runs before the inspection window and either starts the full requested window or none (section 6.2).
 2. **Both safety nets with time-zone conversion:** 02:00 UK auto-shutdown (02:00 UTC in GMT, 01:00 UTC in BST) and 03:30 UTC nightly Destroy (guarded from 03:20 UTC), checked at plan, gate 1 and gate 2 (section 6.2).
 3. **Expiry-tag carriers and explicit mapping** of every Terraform state entry to its Azure resource, including NSG rules, the subnet/NSG association and the VM's managed OS disk; protect on uncertainty (section 6.3).
-4. **"Stopped before apply" vs "apply attempted":** failure-cleanup destroys only what this run attempted to apply; a rejected plan never destroys a pre-existing unexpired environment (section 6.4).
+4. **"Stopped before apply" vs "apply attempted":** failure-cleanup destroys only what this run provably created, judged from pre-/post-apply state lineage, serial and resources plus Azure; a rejected plan or refused apply never destroys a pre-existing unexpired environment, and uncertainty is INCONCLUSIVE (section 6.4).
+6. **No-change plans:** apply is skipped but the existing workload is still validated; the report uses the real API and browser results. Deployment checks, the requested window and cleanup still gate PASSED (section 7).
 5. **Matches the merged Stage 1:** baseline `ac8a1a2`; app path `tickets-app/`; test paths `tests/app/unit/`, `tests/app/flow_check.py`, `tests/app/ui/ui_check.py`, `scripts/test-tickets-local.sh`; preview data persists in a Docker volume (section 11).
