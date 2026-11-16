@@ -11,13 +11,25 @@ passed on 2026-11-14** (plan, approval, apply, validation, destroy); failure cle
 Destroy workflow, auto-shutdown and complete teardown are not live-tested yet. See
 [`docs/milestone-2.md`](docs/milestone-2.md) and [section 17](#17-milestone-2-deployment-engine).
 
+**Milestone 3 (implemented offline, in review)** deploys and tests a real support-ticket
+app, the Atlas Service Desk demo (fictional data only), on this infrastructure:
+- the exact GHCR image digest is planned, approved and checked in the VM;
+- independent API and browser tests run, including a deliberate fault build they must catch;
+- application and cleanup results are reported separately;
+- lifetime gates account for the 02:00 UK auto-shutdown and the 03:30 UTC Destroy;
+- an owner inspection window with the URL delivered privately;
+- guarded failure-cleanup and an hourly expiry sweep that protect on uncertainty.
+
+**No Milestone 3 live run yet.** See [`docs/milestone-3.md`](docs/milestone-3.md),
+[`docs/milestone-3-design.md`](docs/milestone-3-design.md) and [section 18](#18-milestone-3-support-ticket-application).
+
 > **Status:** deployed to Azure (East US, `Standard_B2ats_v2`) on 2026-11-13 from a
 > reviewed saved plan, validated, then destroyed. Public, in-VM (Azure Run Command)
 > and network-restriction checks passed after two validation-script fixes; results,
 > limitations and anything untested are in [`docs/validation-log.md`](docs/validation-log.md)
 > section 4, with sanitised output in [`docs/evidence/2026-11-13-deployment/`](docs/evidence/2026-11-13-deployment/).
-> Latest offline run (2026-11-15, after the log-masking change): `validate.sh` (`REQUIRE_ALL=1`) 12 passed, 0 failed, 0 skipped; `terraform test` 17/17; script tests 140/140 - see section 15 and
-> [`docs/validation-log.md`](docs/validation-log.md) section 10.
+> Latest offline run (2026-11-16, Milestone 3 Stages 1-4): `validate.sh` (`REQUIRE_ALL=1`) 19 passed, 0 failed, 0 skipped; `terraform test` 23/23; script tests 158/158 - see
+> [`docs/validation-log.md`](docs/validation-log.md) sections 12-16 (section 10 for the 2026-11-15 masking run).
 >
 > Latest live run (2026-11-14, Milestone 2 Deploy run [43588089749](https://github.com/Shayze01/atlas-platform-foundation/actions/runs/43588089749)):
 > 11 resources applied from the reviewed plan, public 5/5, in-VM 10/10, blocked 3/3,
@@ -26,7 +38,7 @@ Destroy workflow, auto-shutdown and complete teardown are not live-tested yet. S
 > [`docs/evidence/2026-11-14-m2-live-run/`](docs/evidence/2026-11-14-m2-live-run/).
 > **Not live-tested:** failure cleanup, deliberate plan hash-mismatch rejection,
 > `destroy.yml` (manual/nightly) and the `azure-destroy` credential, the 02:00 auto-shutdown
-> firing, `keep-running`, concurrency/lock recovery, lifecycle expiry, planning against
+> firing, concurrency/lock recovery, lifecycle expiry, planning against
 > existing resources, `teardown.sh`. Costs are estimates pending billing data.
 >
 > **Log masking (section 10):** the tenant, subscription and client IDs and the storage
@@ -56,6 +68,7 @@ Destroy workflow, auto-shutdown and complete teardown are not live-tested yet. S
 15. [Offline validation and tests](#15-offline-validation-and-tests)
 16. [Security notes and known limitations](#16-security-notes-and-known-limitations)
 17. [Milestone 2: deployment engine](#17-milestone-2-deployment-engine)
+18. [Milestone 3: support-ticket application](#18-milestone-3-support-ticket-application)
 
 ---
 
@@ -920,3 +933,19 @@ Full design, trust boundaries, owner setup, recovery and costs:
   from each Azure job's second step; the first step's `env:` header still shows them once.
   `sanitize.sh` also masks truncated GUIDs. See validation-log section 10.
 
+## 18. Milestone 3: support-ticket application
+
+Implemented in reviewable stages (#6 merged; #7-#10 in review). **Offline-tested only.**
+- **What it adds:**
+  - the app in `tickets-app/`;
+  - its deliberate fault build;
+  - Terraform/cloud-init that pull the exact image digest and arm a guest expiry timer;
+  - plan policy for the image, variant and expiry;
+  - Deploy with `scenario` and `inspection_minutes` (the old `keep-running` option is removed: expiry is mandatory);
+  - two lifetime gates that never shorten the inspection window;
+  - guarded failure-cleanup that judges ownership from pre-/post-apply state snapshots and never destroys a pre-existing unexpired environment (uncertainty is INCONCLUSIVE);
+  - an hourly expiry sweep;
+  - a report with separate application and cleanup rows.
+- **Full guide:** [`docs/milestone-3.md`](docs/milestone-3.md).
+- **Offline results:** [`docs/validation-log.md`](docs/validation-log.md) sections 12-17.
+- **Not live-tested:** everything that needs Azure or GitHub scheduling (see the guide's last section).
