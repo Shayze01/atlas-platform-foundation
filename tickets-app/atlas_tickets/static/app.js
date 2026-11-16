@@ -43,6 +43,7 @@ async function loadEnvironment() {
     const v = env.version;
     $("#version").textContent = `Image ${v.variant} @ ${v.revision.slice(0, 12)}`;
     banner.replaceChildren();
+    if (env.warning) banner.append(el("strong", `${env.warning} · `, "warning"));
     const label = env.name === "preview" ? "Browser preview (not Azure)" : `Environment: ${env.name}`;
     banner.append(el("strong", label));
     if (env.expires_at) {
@@ -56,7 +57,7 @@ async function loadEnvironment() {
     } else {
       banner.append(el("span", " · No expiry set for this environment."));
     }
-    if (v.variant !== "healthy") banner.classList.add("danger");
+    if (v.variant !== "healthy" || env.warning) banner.classList.add("danger");
   } catch (e) {
     banner.textContent = `Environment details unavailable: ${e.message}`;
   }
