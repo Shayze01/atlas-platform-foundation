@@ -530,3 +530,53 @@ Raw output: [`evidence/offline-validate-2026-11-16-m3-stage2.log`](evidence/offl
   allows the fault image only for `scenario=deliberate-failure-ignore-status` (Stages 3-4).
 - Any live run of the fault image, `failure-cleanup` or the report job (Stage 7).
 
+
+## 13. Milestone 3 Stage 3: image by digest, expiry tags and timer, plan policy, mapping (executed 2026-11-16, offline)
+
+Raw output: [`evidence/offline-validate-2026-11-16-m3-stage3.log`](evidence/offline-validate-2026-11-16-m3-stage3.log). **15 passed, 0 failed, 0 skipped.**
+
+| Check | Result |
+| --- | --- |
+| `terraform test`: digest-only `app_image`, variant, exact real-UTC `expires_at`, `ExpiresAt`/`AppVariant` tags, cloud-init pins image and expiry | 23/23 (6 new rejections) |
+| Rendered cloud-init: embedded scripts byte-for-byte, env file, timer `OnCalendar` in UTC with `Persistent=true`, no build/tag, 5.4 KB; schema valid | 10/10 |
+| Expiry-tag carriers and state-to-Azure mapping on a complete deployment (all rules, association, managed OS disk), drift guard against the `.tf` files, every protect-on-uncertainty case | 23/23 |
+| Guest scripts: past expiry never starts the app and deletes data; malformed/impossible/missing expiry, tag, foreign namespace, digest mismatch refused; env file never executed | 10/10 |
+| Plan policy (14 checks) incl. fault build refused for `healthy`, healthy refused for the failure scenario, cap, missing carrier tag, cloud-init mismatch; `azure-validate` digest/timer/variant checks | script tests 158/158 |
+
+## 14. Milestone 3 Stage 4: workflows, lifetime gates, guarded cleanup, sweep, report (executed 2026-11-16, offline)
+
+Raw output: [`evidence/offline-validate-2026-11-16-m3-stage4.log`](evidence/offline-validate-2026-11-16-m3-stage4.log). **19 passed, 0 failed, 0 skipped.**
+
+| Owner requirement (2026-11-16) | Test | Result |
+| --- | --- | --- |
+| 1. Full safety margin; recheck before the window; never shorten it | `tests/lifetime/test_lifetime.py` (95 min left passes, 94 refused; window at exactly 60 min passes, 59 refused; no "shortened" output) | 18/18 |
+| 2. 02:00 UK auto-shutdown and 03:30 UTC Destroy with time-zone conversion | same file: GMT 02:00 UTC vs BST 01:00 UTC at the same clock time, spring-forward and autumn-back nights, 03:20 UTC guard, constants match `variables.tf` and the cron | included above |
+| 3. Carriers/mapping, protect on uncertainty | `tests/expiry/test_guarded_destroy.py`: every revision 2 section 6.3 row incl. state lock; destroy only on DESTROY; no call to the backend, identities or group delete | 22/22 |
+| 4. Stopped before apply vs apply attempted; rejected plan keeps a pre-existing unexpired environment | `test_rejected_plan_never_destroys_a_preexisting_unexpired_environment` (+ NOOP, own-expiry, attempted, uncertain cases); workflow policy enforces marker/gate order and catches a mutated unconditional destroy | PASS |
+| Separate application/cleanup results | `tests/expiry/test_run_report.py` | 11/11 |
+| Image build and inspection window scripts | `tests/scripts/test-ci-helpers.sh` (stub docker, fake clock) | 11/11 |
+| Private URL, no `continue-on-error`, packages scope, gate/window order, guarded cleanup wiring | workflow policy tests (13 new rules + 2 controls) | PASS |
+
+## 15. Milestone 3 Stage 5: documentation (2026-11-16)
+
+Owner requirement 5: the design is now revision 3 ([`milestone-3-design.md`](milestone-3-design.md)):
+- **Baseline:** `ac8a1a2` (merged Stage 1).
+- **Paths:**
+  - app: `tickets-app/`;
+  - tests: `tests/app/unit/`, `tests/app/flow_check.py`, `tests/app/ui/ui_check.py` and `scripts/test-tickets-local.sh`.
+- **Preview wording:** preview data lives in a named Docker volume. It survives container restarts and re-creation, and is deleted only with the volume.
+- **New sections:** the lifetime gates, the safety-net time zones, the carrier mapping and the failure-cleanup decision table are documented in sections 6.2-6.4. Changes are listed in section 17.
+
+Docs-only stage. The full offline suite was re-run on this branch; raw output: [`evidence/offline-validate-2026-11-16-m3-stage5.log`](evidence/offline-validate-2026-11-16-m3-stage5.log).
+
+### Still not live-tested after Stages 1-5
+- **Image and VM:** the GHCR pull and digest check, the guest timer and the boot-time check.
+- **Cleanup:**
+  - the hourly sweep;
+  - failure-cleanup with the `azure-destroy` credential;
+  - a rejected approval;
+  - outputs after a cancelled apply;
+  - the lifetime gates refusing live.
+- **Safety nets:** the auto-shutdown and the nightly Destroy.
+- **Tests and mapping:** Playwright from the runner, and `az resource list` matching the mapping fixture.
+- **Costs:** billing data.
