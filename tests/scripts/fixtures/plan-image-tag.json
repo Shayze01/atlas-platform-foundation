@@ -1,0 +1,207 @@
+{
+ "format_version": "1.2",
+ "variables": {
+  "admin_source_ip_cidr": {
+   "value": "203.0.113.77/32"
+  },
+  "admin_ssh_public_key": {
+   "value": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKAhnnlI7ScyqxeIK1AysQ0aqybx6fYKZbROGFSh78TQ atlas-test-only"
+  },
+  "app_image": {
+   "value": "ghcr.io/shayze01/atlas-tickets:latest"
+  },
+  "app_variant": {
+   "value": "healthy"
+  },
+  "expires_at": {
+   "value": "2026-11-16T22:35:00Z"
+  }
+ },
+ "resource_changes": [
+  {
+   "address": "module.networking.azurerm_network_security_rule.allow_ssh_from_admin",
+   "change": {
+    "actions": [
+     "create"
+    ],
+    "after": {
+     "source_address_prefix": "203.0.113.77/32"
+    }
+   }
+  },
+  {
+   "address": "module.compute.azurerm_linux_virtual_machine.this",
+   "change": {
+    "actions": [
+     "create"
+    ],
+    "after": {
+     "custom_data": "I2Nsb3VkLWNvbmZpZw==",
+     "admin_ssh_key": [
+      {
+       "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKAhnnlI7ScyqxeIK1AysQ0aqybx6fYKZbROGFSh78TQ"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "address": "module.compute.azurerm_public_ip.vm",
+   "change": {
+    "actions": [
+     "delete",
+     "create"
+    ]
+   }
+  },
+  {
+   "address": "module.networking.azurerm_subnet.workload",
+   "change": {
+    "actions": [
+     "update"
+    ]
+   }
+  },
+  {
+   "address": "module.networking.azurerm_network_security_rule.test_temporary[0]",
+   "change": {
+    "actions": [
+     "delete"
+    ]
+   }
+  },
+  {
+   "address": "data.azurerm_resource_group.existing[0]",
+   "change": {
+    "actions": [
+     "read"
+    ]
+   }
+  }
+ ],
+ "planned_values": {
+  "root_module": {
+   "resources": [
+    {
+     "address": "data.azurerm_resource_group.existing[0]",
+     "mode": "data",
+     "type": "azurerm_resource_group",
+     "values": {
+      "name": "rg-atlas-foundation-dev"
+     }
+    }
+   ],
+   "child_modules": [
+    {
+     "address": "module.networking",
+     "resources": [
+      {
+       "address": "module.networking.azurerm_subnet.workload",
+       "type": "azurerm_subnet",
+       "values": {
+        "default_outbound_access_enabled": false,
+        "address_prefixes": [
+         "10.20.1.0/24"
+        ]
+       }
+      },
+      {
+       "address": "module.networking.azurerm_network_security_rule.Allow-SSH-From-Admin",
+       "type": "azurerm_network_security_rule",
+       "values": {
+        "name": "Allow-SSH-From-Admin",
+        "access": "Allow",
+        "direction": "Inbound",
+        "protocol": "Tcp",
+        "priority": 100,
+        "source_address_prefix": "203.0.113.77/32",
+        "destination_port_range": "22"
+       }
+      },
+      {
+       "address": "module.networking.azurerm_network_security_rule.Allow-HTTP-From-Admin",
+       "type": "azurerm_network_security_rule",
+       "values": {
+        "name": "Allow-HTTP-From-Admin",
+        "access": "Allow",
+        "direction": "Inbound",
+        "protocol": "Tcp",
+        "priority": 100,
+        "source_address_prefix": "203.0.113.77/32",
+        "destination_port_range": "80"
+       }
+      },
+      {
+       "address": "module.networking.azurerm_network_security_rule.deny",
+       "type": "azurerm_network_security_rule",
+       "values": {
+        "name": "Deny-Internet-Inbound",
+        "access": "Deny",
+        "direction": "Inbound",
+        "source_address_prefix": "Internet",
+        "destination_port_range": "*"
+       }
+      }
+     ]
+    },
+    {
+     "address": "module.compute",
+     "resources": [
+      {
+       "address": "module.compute.azurerm_linux_virtual_machine.this",
+       "type": "azurerm_linux_virtual_machine",
+       "values": {
+        "size": "Standard_B2ats_v2",
+        "location": "eastus",
+        "disable_password_authentication": true,
+        "admin_username": "atlasadmin",
+        "admin_ssh_key": [
+         {
+          "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKAhnnlI7ScyqxeIK1AysQ0aqybx6fYKZbROGFSh78TQ",
+          "username": "atlasadmin"
+         }
+        ],
+        "os_disk": [
+         {
+          "storage_account_type": "Standard_LRS",
+          "caching": "ReadWrite"
+         }
+        ],
+        "tags": {
+         "ExpiresAt": "2026-11-16T22:35:00Z",
+         "AppVariant": "healthy"
+        },
+        "custom_data": "I2Nsb3VkLWNvbmZpZwojIFJlbmRlcmVkIGJ5IFRlcnJhZm9ybSAodGVtcGxhdGVmaWxlKS4gUnVucyBvbmNlLCBvbiB0aGUgVk0ncyBmaXJzdCBib290LgojIFB1bGxzIHRoZSBleGFjdCBwbGFubmVkIGltYWdlIGRpZ2VzdCAobm8gYnVpbGQgb24gdGhlIFZNKSBhbmQgaW5zdGFsbHMgdGhlCiMgZ3Vlc3QgZXhwaXJ5IHRpbWVyLiBFdmVyeSB2YWx1ZSBiZWxvdyB3YXMgdmFsaWRhdGVkIGJ5IFRlcnJhZm9ybSB2YXJpYWJsZXMuCgpwYWNrYWdlX3VwZGF0ZTogdHJ1ZQpwYWNrYWdlX3VwZ3JhZGU6IGZhbHNlCnBhY2thZ2VzOgogIC0gZG9ja2VyLmlvCiAgLSBjdXJsCgp3cml0ZV9maWxlczoKICAtIHBhdGg6IC9ldGMvc3NoL3NzaGRfY29uZmlnLmQvMTAtYXRsYXMtaGFyZGVuaW5nLmNvbmYKICAgIG93bmVyOiByb290OnJvb3QKICAgIHBlcm1pc3Npb25zOiAiMDY0NCIKICAgIGNvbnRlbnQ6IHwKICAgICAgIyBEZWZlbmNlIGluIGRlcHRoOiBUZXJyYWZvcm0gYWxyZWFkeSBkaXNhYmxlcyBwYXNzd29yZCBhdXRoZW50aWNhdGlvbi4KICAgICAgUGFzc3dvcmRBdXRoZW50aWNhdGlvbiBubwogICAgICBLYmRJbnRlcmFjdGl2ZUF1dGhlbnRpY2F0aW9uIG5vCiAgICAgIFBlcm1pdFJvb3RMb2dpbiBubwogIC0gcGF0aDogL2V0Yy9hdGxhcy90aWNrZXRzLmVudgogICAgb3duZXI6IHJvb3Q6cm9vdAogICAgcGVybWlzc2lvbnM6ICIwNjQ0IgogICAgY29udGVudDogfAogICAgICBBVExBU19JTUFHRT1naGNyLmlvL3NoYXl6ZTAxL2F0bGFzLXRpY2tldHNAc2hhMjU2OmExYTFhMWExYTFhMWExYTFhMWExYTFhMWExYTFhMWExYTFhMWExYTFhMWExYTFhMWExYTFhMWExYTFhMWExYTEKICAgICAgQVRMQVNfRVhQSVJFU19BVD0yMDI2LTExLTE2VDIyOjM1OjAwWgogICAgICBBVExBU19FTlZJUk9OTUVOVD1henVyZS1kZXYKICAtIHBhdGg6IC9vcHQvYXRsYXMvcnVuLXRpY2tldHMuc2gKICAgIG93bmVyOiByb290OnJvb3QKICAgIHBlcm1pc3Npb25zOiAiMDc1NSIKICAgIGNvbnRlbnQ6IHwKICAgICAgIyEvdXNyL2Jpbi9lbnYgYmFzaAogICAgICAjIFN0YXJ0cyB0aGUgQXRsYXMgU2VydmljZSBEZXNrIGNvbnRhaW5lciBmcm9tIHRoZSBleGFjdCBpbWFnZSBkaWdlc3QgaW4KICAgICAgIyAvZXRjL2F0bGFzL3RpY2tldHMuZW52LiBSdW4gYnkgYXRsYXMtdGlja2V0cy5zZXJ2aWNlIGF0IGV2ZXJ5IGJvb3QsIHNvIGl0IGlzIGFsc28KICAgICAgIyB0aGUgYm9vdC10aW1lIGV4cGlyeSBjaGVjazogb25jZSBBVExBU19FWFBJUkVTX0FUIGhhcyBwYXNzZWQgaXQgbmV2ZXIgc3RhcnRzIHRoZQogICAgICAjIGFwcCBhbmQgcnVucyB0aGUgZ3Vlc3QgYXBwIHN0b3AgaW5zdGVhZCAoZS5nLiBhIFZNIHN0YXJ0ZWQgYWdhaW4gYWZ0ZXIgZXhwaXJ5KS4KICAgICAgc2V0IC1ldW8gcGlwZWZhaWwKICAgICAgRU5WX0ZJTEU9IiR7QVRMQVNfRU5WX0ZJTEU6LS9ldGMvYXRsYXMvdGlja2V0cy5lbnZ9IgogICAgICAjIFBhcnNlZCwgbmV2ZXIgc291cmNlZDogdmFsdWVzIGFyZSBkYXRhIGFuZCBhcmUgdmFsaWRhdGVkIGJlbG93LgogICAgICBBVExBU19JTUFHRT0iIiBBVExBU19FWFBJUkVTX0FUPSIiIEFUTEFTX0VOVklST05NRU5UPSIiCiAgICAgIHdoaWxlIElGUz0nPScgcmVhZCAtciBrZXkgdmFsdWU7IGRvCiAgICAgICAgY2FzZSAiJHtrZXl9IiBpbgogICAgICAgICAgQVRMQVNfSU1BR0V8QVRMQVNfRVhQSVJFU19BVHxBVExBU19FTlZJUk9OTUVOVCkgcHJpbnRmIC12ICIke2tleX0iICclcycgIiR7dmFsdWV9IiA7OwogICAgICAgIGVzYWMKICAgICAgZG9uZSA8IiR7RU5WX0ZJTEV9IgogICAgICBDT05UQUlORVI9YXRsYXMtdGlja2V0cwogICAgICBWT0xVTUU9YXRsYXMtdGlja2V0cy1kYXRhCiAgICAgIAogICAgICBpZiBbWyAhICIke0FUTEFTX0VYUElSRVNfQVQ6LX0iID1+IF5bMC05XXs0fS1bMC05XXsyfS1bMC05XXsyfVRbMC05XXsyfTpbMC05XXsyfTpbMC05XXsyfVokIF1dIHx8CiAgICAgICAgICEgZXhwaXJlcz0iJChkYXRlIC11IC1kICIke0FUTEFTX0VYUElSRVNfQVR9IiArJXMgMj4vZGV2L251bGwpIjsgdGhlbgogICAgICAgIGVjaG8gImF0bGFzOiBBVExBU19FWFBJUkVTX0FUIGlzIG1pc3Npbmcgb3IgbWFsZm9ybWVkOyByZWZ1c2luZyB0byBzdGFydCIgPiYyCiAgICAgICAgZXhpdCAxCiAgICAgIGZpCiAgICAgIGlmICgoICQoZGF0ZSAtdSArJXMpID49IGV4cGlyZXMgKSk7IHRoZW4KICAgICAgICBlY2hvICJhdGxhczogZW52aXJvbm1lbnQgZXhwaXJlZCBhdCAke0FUTEFTX0VYUElSRVNfQVR9OyBub3Qgc3RhcnRpbmcgdGhlIGFwcCIKICAgICAgICBleGVjICIke0FUTEFTX0VYUElSRV9TQ1JJUFQ6LS9vcHQvYXRsYXMvYXRsYXMtZXhwaXJlLnNofSIKICAgICAgZmkKICAgICAgCiAgICAgIGlmIFtbICEgIiR7QVRMQVNfSU1BR0U6LX0iID1+IF5naGNyXC5pby9zaGF5emUwMS9hdGxhcy10aWNrZXRzQHNoYTI1NjpbMC05YS1mXXs2NH0kIF1dOyB0aGVuCiAgICAgICAgZWNobyAiYXRsYXM6IEFUTEFTX0lNQUdFIGlzIG5vdCBhIHBpbm5lZCBkaWdlc3QgcmVmZXJlbmNlOyByZWZ1c2luZyB0byBzdGFydCIgPiYyCiAgICAgICAgZXhpdCAxCiAgICAgIGZpCiAgICAgIGRvY2tlciBwdWxsICIke0FUTEFTX0lNQUdFfSIKICAgICAgaWYgISBkb2NrZXIgaW1hZ2UgaW5zcGVjdCAtLWZvcm1hdCAne3tqb2luIC5SZXBvRGlnZXN0cyAiXG4ifX0nICIke0FUTEFTX0lNQUdFfSIgfCBncmVwIC1xeEYgIiR7QVRMQVNfSU1BR0V9IjsgdGhlbgogICAgICAgIGVjaG8gImF0bGFzOiBwdWxsZWQgaW1hZ2UgZG9lcyBub3QgY2FycnkgdGhlIHBsYW5uZWQgZGlnZXN0IiA+JjIKICAgICAgICBleGl0IDEKICAgICAgZmkKICAgICAgZG9ja2VyIHJtIC1mICIke0NPTlRBSU5FUn0iID4vZGV2L251bGwgMj4mMSB8fCB0cnVlCiAgICAgIGRvY2tlciBydW4gLWQgLS1uYW1lICIke0NPTlRBSU5FUn0iIC0tcmVzdGFydCBubyBcCiAgICAgICAgLS1yZWFkLW9ubHkgLS10bXBmcyAvdG1wIC0tY2FwLWRyb3AgQUxMIC0tc2VjdXJpdHktb3B0IG5vLW5ldy1wcml2aWxlZ2VzIFwKICAgICAgICAtLW1lbW9yeSAyNTZtIC0tcGlkcy1saW1pdCAxMDAgXAogICAgICAgIC12ICIke1ZPTFVNRX06L3Zhci9saWIvYXRsYXMtdGlja2V0cyIgXAogICAgICAgIC1lIEFUTEFTX0VOVklST05NRU5UPSIke0FUTEFTX0VOVklST05NRU5UOi1henVyZX0iIC1lIEFUTEFTX0VYUElSRVNfQVQ9IiR7QVRMQVNfRVhQSVJFU19BVH0iIFwKICAgICAgICAtcCA4MDo4MDgwICIke0FUTEFTX0lNQUdFfSIKICAgICAgCiAgLSBwYXRoOiAvb3B0L2F0bGFzL2F0bGFzLWV4cGlyZS5zaAogICAgb3duZXI6IHJvb3Q6cm9vdAogICAgcGVybWlzc2lvbnM6ICIwNzU1IgogICAgY29udGVudDogfAogICAgICAjIS91c3IvYmluL2VudiBiYXNoCiAgICAgICMgR3Vlc3QgYXBwIHN0b3AgYXQgQVRMQVNfRVhQSVJFU19BVCAoYXRsYXMtZXhwaXJ5LnRpbWVyLCBhbmQgdGhlIGJvb3QtdGltZSBjaGVjayBpbgogICAgICAjIHJ1bi10aWNrZXRzLnNoKS4gU3RvcHMgdGhlIGFwcCBhbmQgZGVsZXRlcyB0aGUgdGlja2V0IGRhdGEgc28gdGhlIFVSTCBzdG9wcwogICAgICAjIGFuc3dlcmluZy4gSXQgZG9lcyBOT1QgZGVsZXRlIEF6dXJlIHJlc291cmNlcyBvciBzdG9wIGJpbGxpbmc6IHRoYXQgaXMgZG9uZSBieSB0aGUKICAgICAgIyBpbi1qb2IgZGVzdHJveSwgZmFpbHVyZS1jbGVhbnVwLCB0aGUgaG91cmx5IHN3ZWVwIG9yIHRoZSBuaWdodGx5IERlc3Ryb3kuCiAgICAgIHNldCAtdW8gcGlwZWZhaWwKICAgICAgZG9ja2VyIHJtIC1mIGF0bGFzLXRpY2tldHMgPi9kZXYvbnVsbCAyPiYxIHx8IHRydWUKICAgICAgZG9ja2VyIHZvbHVtZSBybSAtZiBhdGxhcy10aWNrZXRzLWRhdGEgPi9kZXYvbnVsbCAyPiYxIHx8IHRydWUKICAgICAgc3lzdGVtY3RsIGRpc2FibGUgYXRsYXMtdGlja2V0cy5zZXJ2aWNlID4vZGV2L251bGwgMj4mMSB8fCB0cnVlCiAgICAgIFNUQVRFX0RJUj0iJHtBVExBU19TVEFURV9ESVI6LS92YXIvbGliL2F0bGFzfSIKICAgICAgbWtkaXIgLXAgIiR7U1RBVEVfRElSfSIgJiYgZGF0ZSAtdSArJVktJW0tJWRUJUg6JU06JVNaID4iJHtTVEFURV9ESVJ9L2V4cGlyZWQiCiAgICAgIGVjaG8gImF0bGFzOiBleHBpcmVkIC0gYXBwIHN0b3BwZWQgYW5kIHRpY2tldCBkYXRhIGRlbGV0ZWQ7IEF6dXJlIHJlc291cmNlcyBhcmUgTk9UIGRlbGV0ZWQgYnkgdGhpcyIKICAgICAgCiAgLSBwYXRoOiAvZXRjL3N5c3RlbWQvc3lzdGVtL2F0bGFzLXRpY2tldHMuc2VydmljZQogICAgb3duZXI6IHJvb3Q6cm9vdAogICAgcGVybWlzc2lvbnM6ICIwNjQ0IgogICAgY29udGVudDogfAogICAgICBbVW5pdF0KICAgICAgRGVzY3JpcHRpb249QXRsYXMgU2VydmljZSBEZXNrIGNvbnRhaW5lciAoZXhhY3QgZGlnZXN0OyByZWZ1c2VzIHRvIHN0YXJ0IGFmdGVyIGV4cGlyeSkKICAgICAgUmVxdWlyZXM9ZG9ja2VyLnNlcnZpY2UKICAgICAgQWZ0ZXI9ZG9ja2VyLnNlcnZpY2UgbmV0d29yay1vbmxpbmUudGFyZ2V0CiAgICAgIFdhbnRzPW5ldHdvcmstb25saW5lLnRhcmdldAoKICAgICAgW1NlcnZpY2VdCiAgICAgIFR5cGU9b25lc2hvdAogICAgICBSZW1haW5BZnRlckV4aXQ9eWVzCiAgICAgIEV4ZWNTdGFydD0vb3B0L2F0bGFzL3J1bi10aWNrZXRzLnNoCiAgICAgIFRpbWVvdXRTdGFydFNlYz02MDAKCiAgICAgIFtJbnN0YWxsXQogICAgICBXYW50ZWRCeT1tdWx0aS11c2VyLnRhcmdldAogIC0gcGF0aDogL2V0Yy9zeXN0ZW1kL3N5c3RlbS9hdGxhcy1leHBpcnkuc2VydmljZQogICAgb3duZXI6IHJvb3Q6cm9vdAogICAgcGVybWlzc2lvbnM6ICIwNjQ0IgogICAgY29udGVudDogfAogICAgICBbVW5pdF0KICAgICAgRGVzY3JpcHRpb249QXRsYXMgZ3Vlc3QgYXBwIHN0b3AgYXQgRXhwaXJlc0F0IChkb2VzIG5vdCBkZWxldGUgQXp1cmUgcmVzb3VyY2VzKQogICAgICBBZnRlcj1kb2NrZXIuc2VydmljZQoKICAgICAgW1NlcnZpY2VdCiAgICAgIFR5cGU9b25lc2hvdAogICAgICBFeGVjU3RhcnQ9L29wdC9hdGxhcy9hdGxhcy1leHBpcmUuc2gKICAtIHBhdGg6IC9ldGMvc3lzdGVtZC9zeXN0ZW0vYXRsYXMtZXhwaXJ5LnRpbWVyCiAgICBvd25lcjogcm9vdDpyb290CiAgICBwZXJtaXNzaW9uczogIjA2NDQiCiAgICBjb250ZW50OiB8CiAgICAgIFtVbml0XQogICAgICBEZXNjcmlwdGlvbj1BdGxhcyBndWVzdCBhcHAgc3RvcCBhdCAyMDI2LTExLTE2VDIyOjM1OjAwWgoKICAgICAgW1RpbWVyXQogICAgICBPbkNhbGVuZGFyPTIwMjYtMTEtMTYgMjI6MzU6MDAgVVRDCiAgICAgIFBlcnNpc3RlbnQ9dHJ1ZQogICAgICBBY2N1cmFjeVNlYz0xcwoKICAgICAgW0luc3RhbGxdCiAgICAgIFdhbnRlZEJ5PXRpbWVycy50YXJnZXQKCnJ1bmNtZDoKICAtIFtzeXN0ZW1jdGwsIGVuYWJsZSwgLS1ub3csIGRvY2tlcl0KICAtIFt1c2VybW9kLCAtYUcsIGRvY2tlciwgImF0bGFzYWRtaW4iXQogIC0gW3N5c3RlbWN0bCwgZGFlbW9uLXJlbG9hZF0KICAtIFtzeXN0ZW1jdGwsIGVuYWJsZSwgLS1ub3csIGF0bGFzLWV4cGlyeS50aW1lcl0KICAtIFtzeXN0ZW1jdGwsIGVuYWJsZSwgLS1ub3csIGF0bGFzLXRpY2tldHMuc2VydmljZV0KICAtIFtzaCwgLWMsICJzeXN0ZW1jdGwgcmVsb2FkIHNzaCB8fCB0cnVlIl0KCmZpbmFsX21lc3NhZ2U6ICJBdGxhcyBTZXJ2aWNlIERlc2sgY2xvdWQtaW5pdCBmaW5pc2hlZCBhZnRlciAkVVBUSU1FIHNlY29uZHMiCgo="
+       }
+      },
+      {
+       "address": "module.compute.azurerm_dev_test_global_vm_shutdown_schedule.this[0]",
+       "type": "azurerm_dev_test_global_vm_shutdown_schedule",
+       "values": {
+        "enabled": true,
+        "daily_recurrence_time": "0200",
+        "timezone": "GMT Standard Time",
+        "tags": {
+         "ExpiresAt": "2026-11-16T22:35:00Z",
+         "AppVariant": "healthy"
+        }
+       }
+      },
+      {
+       "address": "module.compute.azurerm_public_ip.vm",
+       "type": "azurerm_public_ip",
+       "values": {
+        "sku": "Standard",
+        "ip_address": "52.142.2.255",
+        "tags": {
+         "ExpiresAt": "2026-11-16T22:35:00Z",
+         "AppVariant": "healthy"
+        }
+       }
+      }
+     ]
+    }
+   ]
+  }
+ }
+}

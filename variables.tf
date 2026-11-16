@@ -148,3 +148,33 @@ variable "subnet_address_prefix" {
     error_message = "subnet_address_prefix must be a valid IPv4 CIDR block."
   }
 }
+
+variable "app_image" {
+  description = "Exact ticket-app image to run, pinned by digest: ghcr.io/shayze01/atlas-tickets@sha256:<64 hex>. Tags such as :latest are refused."
+  type        = string
+
+  validation {
+    condition     = can(regex("^ghcr\\.io/shayze01/atlas-tickets@sha256:[0-9a-f]{64}$", var.app_image))
+    error_message = "app_image must be ghcr.io/shayze01/atlas-tickets@sha256:<64 lowercase hex> (a digest reference, not a tag)."
+  }
+}
+
+variable "app_variant" {
+  description = "Variant label of app_image: healthy, or broken-ignore-status (deliberate fault build, failure scenario only). Plan policy checks it against the scenario."
+  type        = string
+
+  validation {
+    condition     = contains(["healthy", "broken-ignore-status"], var.app_variant)
+    error_message = "app_variant must be healthy or broken-ignore-status."
+  }
+}
+
+variable "expires_at" {
+  description = "Environment expiry (UTC, exactly YYYY-MM-DDTHH:MM:SSZ). Written to the ExpiresAt tag on every expiry-tag carrier and to the in-guest expiry timer. Plan policy enforces the 3 h cap."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$", var.expires_at)) && can(formatdate("YYYY", var.expires_at))
+    error_message = "expires_at must be a real UTC time in the exact form YYYY-MM-DDTHH:MM:SSZ, e.g. 2026-11-16T22:30:00Z."
+  }
+}

@@ -15,7 +15,8 @@ odd_err() { echo "ERROR: (InternalServerError) Encountered internal server error
 
 case "${args}" in
   "vm run-command invoke"*)
-    # RC_SCENARIO: ok | fail | outbound-mismatch | password-enabled | cloud-init-running | wrong-key | unhealthy
+    # RC_SCENARIO: ok | fail | outbound-mismatch | password-enabled | cloud-init-running | wrong-key | unhealthy |
+    #              wrong-digest | timer-inactive
     rc="${RC_SCENARIO:-ok}"
     [[ "${rc}" == fail ]] && { echo "ERROR: (Conflict) Run command extension execution is in progress." >&2; exit 1; }
     ci="status: done"; [[ "${rc}" == cloud-init-running ]] && ci="status: running"
@@ -23,7 +24,9 @@ case "${args}" in
     pw=no; [[ "${rc}" == password-enabled ]] && pw=yes
     out=203.0.113.10; [[ "${rc}" == outbound-mismatch ]] && out=198.51.100.99
     fp="${STUB_KEY_FP:-SHA256:none}"; [[ "${rc}" == wrong-key ]] && fp="SHA256:someoneelse"
-    printf 'Enable succeeded: \n[stdout]\nCLOUD_INIT=%s\nCONTAINER_HEALTH=%s\nLOCAL_HEALTH_CODE=200\nLOCAL_HEALTH_BODY={"status":"ok","service":"atlas-platform-foundation"}\nSSHD_permitrootlogin=no\nSSHD_pubkeyauthentication=yes\nSSHD_passwordauthentication=%s\nSSHD_kbdinteractiveauthentication=no\nAUTHORIZED_KEY_FPS=%s\nOUTBOUND_IP=%s\n\n[stderr]\n\n' "${ci}" "${health}" "${pw}" "${fp}" "${out}"
+    digests="${EXPECTED_APP_IMAGE:-none}"; [[ "${rc}" == wrong-digest ]] && digests="ghcr.io/shayze01/atlas-tickets@sha256:$(printf 'f%.0s' {1..64})"
+    timer=active; [[ "${rc}" == timer-inactive ]] && timer=inactive
+    printf 'Enable succeeded: \n[stdout]\nCLOUD_INIT=%s\nCONTAINER_HEALTH=%s\nLOCAL_HEALTH_CODE=200\nLOCAL_HEALTH_BODY={"status":"ok"}\nRUNNING_IMAGE_DIGESTS=%s\nEXPIRY_TIMER=%s\nSSHD_permitrootlogin=no\nSSHD_pubkeyauthentication=yes\nSSHD_passwordauthentication=%s\nSSHD_kbdinteractiveauthentication=no\nAUTHORIZED_KEY_FPS=%s\nOUTBOUND_IP=%s\n\n[stderr]\n\n' "${ci}" "${health}" "${digests}" "${timer}" "${pw}" "${fp}" "${out}"
     exit 0 ;;
   "network nsg rule list"*)
     # NSG_SCENARIO: final | temp-present | error

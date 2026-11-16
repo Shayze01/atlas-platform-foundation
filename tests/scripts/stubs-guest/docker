@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Stub docker for guest expiry tests. DOCKER_DIGEST_SCENARIO: match | mismatch
+echo "docker $*" >>"${STUB_LOG:?}"
+case "$1 $2" in
+  "image inspect")
+    img="${*: -1}"
+    if [[ "${DOCKER_DIGEST_SCENARIO:-match}" == match ]]; then echo "${img}"; else echo "ghcr.io/shayze01/atlas-tickets@sha256:$(printf 'f%.0s' {1..64})"; fi ;;
+esac
+exit 0

@@ -1,5 +1,7 @@
 #cloud-config
 # Rendered by Terraform (templatefile). Runs once, on the VM's first boot.
+# Pulls the exact planned image digest (no build on the VM) and installs the
+# guest expiry timer. Every value below was validated by Terraform variables.
 
 package_update: true
 package_upgrade: false
@@ -16,31 +18,73 @@ write_files:
       PasswordAuthentication no
       KbdInteractiveAuthentication no
       PermitRootLogin no
-  - path: /opt/atlas/app/Dockerfile
+  - path: /etc/atlas/tickets.env
     owner: root:root
     permissions: "0644"
     content: |
-      ${indent(6, dockerfile)}
-  - path: /opt/atlas/app/nginx.conf
-    owner: root:root
-    permissions: "0644"
-    content: |
-      ${indent(6, nginx_conf)}
-  - path: /opt/atlas/app/index.html
-    owner: root:root
-    permissions: "0644"
-    content: |
-      ${indent(6, index_html)}
-  - path: /opt/atlas/app/run-container.sh
+      ATLAS_IMAGE=${app_image}
+      ATLAS_EXPIRES_AT=${expires_at}
+      ATLAS_ENVIRONMENT=${environment_label}
+  - path: /opt/atlas/run-tickets.sh
     owner: root:root
     permissions: "0755"
     content: |
-      ${indent(6, run_container_sh)}
+      ${indent(6, run_tickets_sh)}
+  - path: /opt/atlas/atlas-expire.sh
+    owner: root:root
+    permissions: "0755"
+    content: |
+      ${indent(6, atlas_expire_sh)}
+  - path: /etc/systemd/system/atlas-tickets.service
+    owner: root:root
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Atlas Service Desk container (exact digest; refuses to start after expiry)
+      Requires=docker.service
+      After=docker.service network-online.target
+      Wants=network-online.target
+
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      ExecStart=/opt/atlas/run-tickets.sh
+      TimeoutStartSec=600
+
+      [Install]
+      WantedBy=multi-user.target
+  - path: /etc/systemd/system/atlas-expiry.service
+    owner: root:root
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Atlas guest app stop at ExpiresAt (does not delete Azure resources)
+      After=docker.service
+
+      [Service]
+      Type=oneshot
+      ExecStart=/opt/atlas/atlas-expire.sh
+  - path: /etc/systemd/system/atlas-expiry.timer
+    owner: root:root
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Atlas guest app stop at ${expires_at}
+
+      [Timer]
+      OnCalendar=${expiry_calendar}
+      Persistent=true
+      AccuracySec=1s
+
+      [Install]
+      WantedBy=timers.target
 
 runcmd:
   - [systemctl, enable, --now, docker]
   - [usermod, -aG, docker, "${admin_username}"]
-  - [/opt/atlas/app/run-container.sh]
+  - [systemctl, daemon-reload]
+  - [systemctl, enable, --now, atlas-expiry.timer]
+  - [systemctl, enable, --now, atlas-tickets.service]
   - [sh, -c, "systemctl reload ssh || true"]
 
-final_message: "Atlas Platform Foundation cloud-init finished after $UPTIME seconds"
+final_message: "Atlas Service Desk cloud-init finished after $UPTIME seconds"

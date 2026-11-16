@@ -1,0 +1,93 @@
+[
+  {
+    "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-atlas-foundation-dev/providers/Microsoft.Network/virtualNetworks/vnet-atlas-foundation-dev",
+    "name": "vnet-atlas-foundation-dev",
+    "type": "Microsoft.Network/virtualNetworks",
+    "location": "eastus",
+    "tags": {
+      "Project": "atlas-foundation",
+      "Environment": "dev",
+      "Owner": "<owner>",
+      "ManagedBy": "Terraform",
+      "ExpiresAt": "2026-11-16T22:35:00Z",
+      "AppVariant": "healthy"
+    }
+  },
+  {
+    "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-atlas-foundation-dev/providers/Microsoft.Network/networkSecurityGroups/nsg-atlas-foundation-dev",
+    "name": "nsg-atlas-foundation-dev",
+    "type": "Microsoft.Network/networkSecurityGroups",
+    "location": "eastus",
+    "tags": {
+      "Project": "atlas-foundation",
+      "Environment": "dev",
+      "Owner": "<owner>",
+      "ManagedBy": "Terraform",
+      "ExpiresAt": "2026-11-16T22:35:00Z",
+      "AppVariant": "healthy"
+    }
+  },
+  {
+    "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-atlas-foundation-dev/providers/Microsoft.Network/publicIPAddresses/pip-atlas-foundation-dev",
+    "name": "pip-atlas-foundation-dev",
+    "type": "Microsoft.Network/publicIPAddresses",
+    "location": "eastus",
+    "tags": {
+      "Project": "atlas-foundation",
+      "Environment": "dev",
+      "Owner": "<owner>",
+      "ManagedBy": "Terraform",
+      "ExpiresAt": "2026-11-16T22:35:00Z",
+      "AppVariant": "healthy"
+    }
+  },
+  {
+    "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-atlas-foundation-dev/providers/Microsoft.Network/networkInterfaces/nic-atlas-foundation-dev",
+    "name": "nic-atlas-foundation-dev",
+    "type": "Microsoft.Network/networkInterfaces",
+    "location": "eastus",
+    "tags": {
+      "Project": "atlas-foundation",
+      "Environment": "dev",
+      "Owner": "<owner>",
+      "ManagedBy": "Terraform",
+      "ExpiresAt": "2026-11-16T22:35:00Z",
+      "AppVariant": "healthy"
+    }
+  },
+  {
+    "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-atlas-foundation-dev/providers/Microsoft.Compute/virtualMachines/vm-atlas-foundation-dev",
+    "name": "vm-atlas-foundation-dev",
+    "type": "Microsoft.Compute/virtualMachines",
+    "location": "eastus",
+    "tags": {
+      "Project": "atlas-foundation",
+      "Environment": "dev",
+      "Owner": "<owner>",
+      "ManagedBy": "Terraform",
+      "ExpiresAt": "2026-11-16T22:35:00Z",
+      "AppVariant": "healthy"
+    }
+  },
+  {
+    "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourcegroups/RG-ATLAS-FOUNDATION-DEV/providers/Microsoft.Compute/disks/osdisk-atlas-foundation-dev",
+    "name": "osdisk-atlas-foundation-dev",
+    "type": "Microsoft.Compute/disks",
+    "location": "eastus",
+    "tags": null
+  },
+  {
+    "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourcegroups/rg-atlas-foundation-dev/providers/Microsoft.DevTestLab/schedules/shutdown-computevm-vm-atlas-foundation-dev",
+    "name": "shutdown-computevm-vm-atlas-foundation-dev",
+    "type": "microsoft.devtestlab/schedules",
+    "location": "eastus",
+    "tags": {
+      "Project": "atlas-foundation",
+      "Environment": "dev",
+      "Owner": "<owner>",
+      "ManagedBy": "Terraform",
+      "ExpiresAt": "2026-11-16T22:35:00Z",
+      "AppVariant": "healthy"
+    }
+  }
+]

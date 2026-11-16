@@ -143,7 +143,7 @@ run_case "connectivity: /health 200 but wrong body -> exit 1" 1 connectivity-che
 has 'PASS: GET /health returned HTTP 200'; has 'FAIL: GET /health body does not contain'; done_case
 
 run_case "connectivity: landing page missing title -> exit 1" 1 connectivity-check.sh CURL_SCENARIO=root-badbody
-has "FAIL: GET / body does not contain 'Atlas Platform Foundation'"; done_case
+has "FAIL: GET / body does not contain 'Atlas Service Desk'"; done_case
 
 run_case "connectivity: HTTP timeout -> exit 1" 1 connectivity-check.sh CURL_SCENARIO=timeout
 has 'FAIL: GET /health: request failed \(curl exit 28'; lacks 'PASS: GET'; done_case
@@ -175,7 +175,7 @@ run_case "connectivity: cloud-init error -> exit 1" 1 connectivity-check.sh SSH_
 has 'FAIL: cloud-init not finished cleanly'; done_case
 
 run_case "connectivity: container unhealthy -> exit 1" 1 connectivity-check.sh SSH_SCENARIO=unhealthy
-has "FAIL: container atlas-web health is 'unhealthy'"; done_case
+has "FAIL: container atlas-tickets health is 'unhealthy'"; done_case
 
 run_case "connectivity: TCP ports closed -> exit 1" 1 connectivity-check.sh TCP_SCENARIO=closed
 count 'FAIL: TCP (22|80) not reachable' 2; done_case
@@ -192,12 +192,23 @@ PUBKEY="${WORK}/admin.pub"
 echo "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKAhnnlI7ScyqxeIK1AysQ0aqybx6fYKZbROGFSh78TQ atlas-test-only" >"${PUBKEY}"
 STUB_KEY_FP="$(ssh-keygen -lf "${PUBKEY}" | awk '{print $2}')"
 export STUB_KEY_FP
+EXPECTED_APP_IMAGE="ghcr.io/shayze01/atlas-tickets@sha256:$(printf 'a1%.0s' {1..32})"
+export EXPECTED_APP_VARIANT=healthy EXPECTED_APP_IMAGE
 
-run_case "azure-validate public: healthy -> exit 0" 0 azure-validate.sh -- public
-count '^PASS: ' 5; lacks 'FAIL'; done_case
+run_case "azure-validate public: healthy ticket app -> exit 0" 0 azure-validate.sh -- public
+count '^PASS: ' 7; has "PASS: GET /version body contains variant healthy"; lacks 'FAIL'; done_case
+
+run_case "azure-validate public: /version reports the fault build when healthy expected -> exit 1" 1 azure-validate.sh CURL_SCENARIO=version-broken -- public
+has "FAIL: GET /version body does not contain variant healthy"; done_case
+
+run_case "azure-validate public: fault build expected and reported -> exit 0" 0 azure-validate.sh CURL_SCENARIO=version-broken EXPECTED_APP_VARIANT=broken-ignore-status -- public
+has "PASS: GET /version body contains variant broken-ignore-status"; done_case
+
+run_case "azure-validate public: EXPECTED_APP_VARIANT unset -> exit 2 before any request" 2 azure-validate.sh EXPECTED_APP_VARIANT= -- public
+has "ERROR: set EXPECTED_APP_VARIANT"; [[ ! -s "${STUB_LOG}" ]] || note "tools were called"; done_case
 
 run_case "azure-validate public: HTTP timeout -> exit 1" 1 azure-validate.sh CURL_SCENARIO=timeout -- public
-count 'FAIL: GET /(health)? ?: ?request failed|FAIL: GET / ?.*request failed' 2; done_case
+count 'FAIL: GET /(health|version)?: request failed' 3; done_case
 
 run_case "azure-validate public: SSH timeout is not proof -> exit 1" 1 azure-validate.sh SSH_SCENARIO=timeout -- public
 has 'FAIL: inconclusive - no SSH authentication answer'; lacks 'refuses non-key'; done_case
@@ -206,7 +217,7 @@ run_case "azure-validate public: password offered -> exit 1" 1 azure-validate.sh
 has 'FAIL: SSH server offers other methods'; done_case
 
 run_case "azure-validate in-vm: healthy, key installed, outbound via public IP -> exit 0" 0 azure-validate.sh ADMIN_PUBKEY_FILE="${PUBKEY}" -- in-vm
-count '^PASS: ' 10; lacks 'FAIL'; has 'outbound traffic leaves via'; done_case
+count '^PASS: ' 12; lacks 'FAIL'; has 'outbound traffic leaves via'; has 'running container image is exactly'; has 'guest expiry timer armed'; done_case
 
 run_case "azure-validate in-vm: Run Command error never passes -> exit 1" 1 azure-validate.sh RC_SCENARIO=fail -- in-vm
 has 'FAIL: Azure Run Command failed'; lacks 'PASS'; done_case
@@ -221,7 +232,16 @@ run_case "azure-validate in-vm: cloud-init still running -> exit 1" 1 azure-vali
 has 'FAIL: in-VM: cloud-init finished'; done_case
 
 run_case "azure-validate in-vm: container unhealthy -> exit 1" 1 azure-validate.sh RC_SCENARIO=unhealthy -- in-vm
-has 'FAIL: in-VM: container atlas-web healthy'; done_case
+has 'FAIL: in-VM: container atlas-tickets healthy'; done_case
+
+run_case "azure-validate in-vm: running image is not the planned digest -> exit 1" 1 azure-validate.sh RC_SCENARIO=wrong-digest -- in-vm
+has 'FAIL: in-VM: running container image digests'; lacks 'PASS: in-VM: running container image'; done_case
+
+run_case "azure-validate in-vm: expiry timer not armed -> exit 1" 1 azure-validate.sh RC_SCENARIO=timer-inactive -- in-vm
+has 'FAIL: in-VM: guest expiry timer armed'; done_case
+
+run_case "azure-validate in-vm: EXPECTED_APP_IMAGE is a tag -> exit 2 before any Azure call" 2 azure-validate.sh EXPECTED_APP_IMAGE=ghcr.io/shayze01/atlas-tickets:latest -- in-vm
+has "ERROR: set EXPECTED_APP_IMAGE"; [[ ! -s "${STUB_LOG}" ]] || note "tools were called"; done_case
 
 run_case "azure-validate in-vm: admin key not installed -> exit 1" 1 azure-validate.sh ADMIN_PUBKEY_FILE="${PUBKEY}" RC_SCENARIO=wrong-key -- in-vm
 has 'not in authorized_keys'; done_case

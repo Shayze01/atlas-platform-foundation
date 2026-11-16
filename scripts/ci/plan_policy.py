@@ -12,12 +12,20 @@ value, unexpected structure) counts as a failure.
 
 Exit: 0 every check passed; 1 a check failed or could not be evaluated; 2 bad input.
 Environment: EXPECTED_VM_SIZE (Standard_B2ats_v2), EXPECTED_SHUTDOWN_TIME (0200),
-EXPECTED_SHUTDOWN_TZ (GMT Standard Time).
+EXPECTED_SHUTDOWN_TZ (GMT Standard Time), and for the ticket app (required, fail closed
+if unset): EXPECTED_APP_IMAGE (the digest built for this run), EXPECTED_APP_VARIANT
+(healthy, or broken-ignore-status for scenario deliberate-failure-ignore-status).
+MAX_LIFETIME_MINUTES (180) caps expires_at; ATLAS_POLICY_NOW overrides "now" in tests.
 """
+import base64
+import binascii
 import json
 import os
 import re
 import sys
+from datetime import datetime, timedelta, timezone
+
+from expiry_map import CARRIERS, TAG, parse_expiry
 
 EXPECTED_VM_SIZE = os.environ.get("EXPECTED_VM_SIZE", "Standard_B2ats_v2")
 EXPECTED_SHUTDOWN_TIME = os.environ.get("EXPECTED_SHUTDOWN_TIME", "0200")
@@ -26,6 +34,16 @@ TEMP_RULE = "Allow-SSH-HTTP-From-Test-Temporary"
 OCTET = r"(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)"
 CIDR32 = re.compile(rf"^{OCTET}(\.{OCTET}){{3}}/32$")
 OPEN_SOURCES = {"*", "0.0.0.0/0", "0.0.0.0", "internet", "any"}
+IMAGE_RE = re.compile(r"^ghcr\.io/shayze01/atlas-tickets@sha256:[0-9a-f]{64}$")
+VARIANTS = {"healthy", "broken-ignore-status"}
+EXPECTED_APP_IMAGE = os.environ.get("EXPECTED_APP_IMAGE", "")
+EXPECTED_APP_VARIANT = os.environ.get("EXPECTED_APP_VARIANT", "")
+MAX_LIFETIME_MINUTES = int(os.environ.get("MAX_LIFETIME_MINUTES", "180"))
+
+
+def now_utc():
+    forced = os.environ.get("ATLAS_POLICY_NOW")
+    return parse_expiry(forced) if forced else datetime.now(timezone.utc).replace(microsecond=0)
 
 
 class Unknown(Exception):
@@ -150,6 +168,70 @@ def main():
         off = v["default_outbound_access_enabled"] is False
         return off, "subnet default outbound access disabled (egress via the NIC's public IP)" if off else "implicit default outbound access enabled"
 
+    variables = plan.get("variables") or {}
+
+    def var(name):
+        v = variables.get(name)
+        if not isinstance(v, dict) or not isinstance(v.get("value"), str):
+            raise Unknown(f"var.{name}")
+        return v["value"]
+
+    def app_image():
+        img = var("app_image")
+        details.append(("App image", f"`{img}`" if IMAGE_RE.match(img) else "**not a GHCR digest reference**"))
+        if not EXPECTED_APP_IMAGE:
+            raise Unknown("EXPECTED_APP_IMAGE (digest built for this run)")
+        if not IMAGE_RE.match(img):
+            return False, "not ghcr.io/shayze01/atlas-tickets@sha256:<64 hex> (tags are refused)"
+        return img == EXPECTED_APP_IMAGE, "matches the digest built for this run" if img == EXPECTED_APP_IMAGE else "differs from the digest built for this run"
+
+    def app_variant():
+        variant = var("app_variant")
+        details.append(("App variant", f"`{variant}`" if variant in VARIANTS else "**unknown**"))
+        if EXPECTED_APP_VARIANT not in VARIANTS:
+            raise Unknown("EXPECTED_APP_VARIANT (from the scenario)")
+        ok = variant == EXPECTED_APP_VARIANT
+        return ok, f"`{variant}` (scenario requires `{EXPECTED_APP_VARIANT}`)"
+
+    def expiry():
+        raw = var("expires_at")
+        exp, now = parse_expiry(raw), now_utc()
+        if exp is None:
+            details.append(("Expires at (UTC)", "**malformed**"))
+            return False, "expires_at is not an exact real UTC time YYYY-MM-DDTHH:MM:SSZ"
+        if now is None:
+            raise Unknown("ATLAS_POLICY_NOW")
+        details.append(("Expires at (UTC)", f"`{raw}`"))
+        minutes = (exp - now).total_seconds() / 60
+        if minutes <= 0:
+            return False, f"already expired ({raw})"
+        if exp > now + timedelta(minutes=MAX_LIFETIME_MINUTES):
+            return False, f"{minutes:.0f} min ahead, beyond the {MAX_LIFETIME_MINUTES} min cap"
+        return True, f"{minutes:.0f} min ahead (cap {MAX_LIFETIME_MINUTES} min)"
+
+    def expiry_tags():
+        raw = var("expires_at")
+        one_vm()
+        carriers = [r for r in res if r.get("type") in CARRIERS]
+        bad = [r.get("address", "?") for r in carriers
+               if ((r.get("values") or {}).get("tags") or {}).get(TAG) != raw]
+        details.append(("ExpiresAt tag carriers", f"{len(carriers)} planned"))
+        if bad:
+            return False, f"{len(bad)} carrier(s) without ExpiresAt = expires_at: " + ", ".join(f"`{a}`" for a in bad)
+        return True, f"all {len(carriers)} carrier(s) tagged ExpiresAt = expires_at"
+
+    def cloud_init_pins():
+        img, raw = var("app_image"), var("expires_at")
+        encoded = val(one_vm(), "custom_data")
+        try:
+            text = base64.b64decode(encoded, validate=True).decode()
+        except (binascii.Error, UnicodeDecodeError, ValueError):
+            raise Unknown("custom_data (not base64 cloud-init)")
+        need = [f"ATLAS_IMAGE={img}\n", f"ATLAS_EXPIRES_AT={raw}\n",
+                "OnCalendar=" + raw.replace("T", " ").replace("Z", " UTC") + "\n"]
+        ok = all(n in text for n in need)
+        return ok, "cloud-init pulls var.app_image and stops the app at expires_at" if ok else "cloud-init does not pin var.app_image/expires_at"
+
     check("VM size is the approved small size", vm_size)
     check("Region known", region)
     check("OS disk type known", disk)
@@ -159,6 +241,11 @@ def main():
     check("Explicit inbound Internet deny", deny_internet)
     check("No temporary test rule in the deployed configuration", no_temp_rule)
     check("No implicit outbound access", explicit_outbound)
+    check("App image is this repo's GHCR image pinned by digest, built for this run", app_image)
+    check("Image variant matches the scenario (fault build only for the failure scenario)", app_variant)
+    check("Expiry is valid, in the future and within the cap", expiry)
+    check("Every expiry-tag carrier is tagged ExpiresAt = expires_at", expiry_tags)
+    check("cloud-init pins the planned image digest and expiry", cloud_init_pins)
 
     print("#### Deployment details (allowlisted values only)\n")
     print("| Setting | Planned value |\n| --- | --- |")
