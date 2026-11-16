@@ -51,6 +51,11 @@ jobs:
       TF_VAR_admin_source_ip_cidr: ${{ secrets.ADMIN_SOURCE_IP_CIDR }}
       TF_VAR_admin_ssh_public_key: ${{ secrets.ADMIN_SSH_PUBLIC_KEY }}
       TF_VAR_owner: ${{ secrets.OWNER_TAG }}
+      # Destroy needs values for every required variable; these placeholders pass
+      # validation and are never deployed (destroy removes what is in state).
+      TF_VAR_app_image: ghcr.io/shayze01/atlas-tickets@sha256:0000000000000000000000000000000000000000000000000000000000000000
+      TF_VAR_app_variant: healthy
+      TF_VAR_expires_at: "2000-01-01T00:00:00Z"
     steps:
       - name: Mask Azure identifiers for the rest of this job
         # Tenant, subscription and client IDs and the storage account are variables, not
