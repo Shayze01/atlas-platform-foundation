@@ -213,8 +213,7 @@ The sweep compares the carriers' Azure tags with each other and with the state t
 |---|---|
 | `APPLY_ATTEMPTED=true` (apply started, failed or was cancelled later) | **Destroy** + verify (this run touched the workload) |
 | Not attempted (gate refused, approval rejected, hash mismatch, earlier failure, or unknown) and group/state empty | No-op: this run created nothing |
-| Not attempted, carriers carry **this run's** `ExpiresAt` | Destroy (they are this run's) |
-| Not attempted, a **pre-existing unexpired** environment | **Protect**: left in place for its own cleanup (in-job destroy, sweep, nightly Destroy) |
+| Not attempted, an **unexpired** environment (even one whose `ExpiresAt` equals this run's: two plans can produce the same value) | **Protect**: left in place for its own cleanup (in-job destroy, sweep, nightly Destroy) |
 | Not attempted, expired + 15 min | Destroy (as the sweep would) |
 | Not attempted, any uncertainty (section 6.3 problems) | Protect, INCONCLUSIVE, job fails |
 

@@ -75,8 +75,8 @@ deallocated) until removed by hand: see the manual recovery in the design, secti
   - **protects** (INCONCLUSIVE, the run fails) on any missing, malformed, conflicting or mismatched tag, an expiry more than 3 h ahead, a state↔Azure difference, a read error or a state lock.
 - **failure-cleanup:**
   - **destroys** when this run attempted apply;
-  - otherwise destroys only resources carrying **this run's** `ExpiresAt` (or expired ones);
-  - **never** destroys a pre-existing unexpired environment.
+  - otherwise applies exactly the sweep rules (destroys only expired environments);
+  - **never** destroys an unexpired environment when apply was not attempted (an equal `ExpiresAt` is not proof of ownership).
 - **Scope:** only `rg-atlas-foundation-dev`. It never touches the state backend, the identities or the group itself.
 
 ## Private URL and network access
@@ -113,7 +113,7 @@ Offline results are in [`validation-log.md`](validation-log.md) sections 12-15.
 - the hourly sweep;
 - failure-cleanup and the `azure-destroy` credential;
 - a rejected approval triggering failure-cleanup;
-- job outputs after a cancelled apply (if lost, the "this run's `ExpiresAt` or expired, else protect" rule applies);
+- job outputs after a cancelled apply (if lost, the workload is protected until it expires, then the sweep destroys it);
 - the lifetime gates refusing live;
 - the 02:00 auto-shutdown and nightly Destroy;
 - Playwright from the runner;
