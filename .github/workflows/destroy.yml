@@ -3,14 +3,21 @@
 # assignments, state backend, identities) so the next deployment works.
 # Complete teardown of backend and identities is bootstrap/teardown.sh (owner-run).
 #
-# The nightly schedule is a SAFEGUARD, not a spending cap: GitHub can delay or
-# skip scheduled runs and disables them after 60 days without repository activity.
+#   destroy       manual dispatch and the nightly 03:30 UTC run: unconditional.
+#   expiry-sweep  hourly: destroys ONLY when every expiry-tag carrier has the same valid
+#                 ExpiresAt, state and Azure agree, and ExpiresAt + 15 min has passed;
+#                 any uncertainty protects and fails the run (INCONCLUSIVE).
+#
+# Schedules are SAFEGUARDS, not a spending cap: GitHub can delay or skip scheduled
+# runs and disables them after 60 days without repository activity. A queued run in
+# the shared concurrency group can be replaced by a newer queued run.
 name: Destroy
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "30 3 * * *" # 03:30 UTC daily, after the 02:00 UK auto-shutdown
+    - cron: "30 3 * * *" # 03:30 UTC daily, after the 02:00 UK auto-shutdown (01:00 UTC in BST)
+    - cron: "17 * * * *" # hourly expiry sweep
 
 # Explicit bash = "bash --noprofile --norc -eo pipefail": a failing command is not
 # hidden by a succeeding "| sanitize.sh" or "| tee" later in the pipeline.
@@ -39,7 +46,7 @@ jobs:
   destroy:
     name: Destroy workload (keep bootstrap resources)
     # Skips quietly until the owner has run the bootstrap and GitHub setup.
-    if: github.ref == 'refs/heads/main' && vars.TFSTATE_STORAGE_ACCOUNT != ''
+    if: github.ref == 'refs/heads/main' && vars.TFSTATE_STORAGE_ACCOUNT != '' && github.event.schedule != '17 * * * *'
     runs-on: ubuntu-24.04
     environment: azure-destroy
     timeout-minutes: 45
@@ -87,3 +94,50 @@ jobs:
       - name: Verify cleanup (resource group kept, empty)
         if: always()
         run: KEEP_RESOURCE_GROUP=1 ./scripts/verify-cleanup.sh 2>&1 | ./scripts/ci/sanitize.sh
+
+  expiry-sweep:
+    name: Hourly expiry sweep (destroys only expired, fully explained workloads)
+    # Skips quietly until the owner has run the bootstrap and GitHub setup.
+    if: github.ref == 'refs/heads/main' && vars.TFSTATE_STORAGE_ACCOUNT != '' && github.event.schedule == '17 * * * *'
+    runs-on: ubuntu-24.04
+    environment: azure-destroy
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      TF_VAR_admin_source_ip_cidr: ${{ secrets.ADMIN_SOURCE_IP_CIDR }}
+      TF_VAR_admin_ssh_public_key: ${{ secrets.ADMIN_SSH_PUBLIC_KEY }}
+      TF_VAR_owner: ${{ secrets.OWNER_TAG }}
+      # Destroy needs values for every required variable; these placeholders pass
+      # validation and are never deployed (destroy removes what is in state).
+      TF_VAR_app_image: ghcr.io/shayze01/atlas-tickets@sha256:0000000000000000000000000000000000000000000000000000000000000000
+      TF_VAR_app_variant: healthy
+      TF_VAR_expires_at: "2000-01-01T00:00:00Z"
+    steps:
+      - name: Mask Azure identifiers for the rest of this job
+        # Tenant, subscription and client IDs and the storage account are variables, not
+        # secrets, so GitHub would print them in every later step's env block.
+        run: |
+          for v in "${ARM_TENANT_ID}" "${ARM_SUBSCRIPTION_ID}" "${ARM_CLIENT_ID}" "${TFSTATE_STORAGE_ACCOUNT}"; do
+            if [[ -n "${v}" ]]; then echo "::add-mask::${v}"; fi
+          done
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: 1.9.8
+          terraform_wrapper: false
+      - name: Azure login (OIDC, deploy identity)
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Terraform init (remote state, Entra ID)
+        run: ./scripts/ci/backend-init.sh 2>&1 | ./scripts/ci/sanitize.sh
+      - name: Guarded destroy (expired + 15 min only; protect on uncertainty)
+        if: always()
+        run: MODE=sweep ./scripts/ci/guarded-destroy.sh 2>&1 | ./scripts/ci/sanitize.sh

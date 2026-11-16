@@ -1,0 +1,24 @@
+# Deliberately unsafe Milestone 3 patterns; the policy checker must reject every one.
+name: bad-m3
+on:
+  workflow_dispatch:
+defaults:
+  run:
+    shell: bash
+permissions: {}
+jobs:
+  apply:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    environment: azure-deploy
+    permissions:
+      id-token: write
+      packages: write
+    steps:
+      - run: |
+          for v in "${ARM_TENANT_ID}" "${ARM_SUBSCRIPTION_ID}" "${ARM_CLIENT_ID}" "${TFSTATE_STORAGE_ACCOUNT}"; do echo "::add-mask::${v}"; done
+      - name: app test allowed to fail
+        continue-on-error: true
+        run: python3 tests/app/flow_check.py --base-url "http://$(terraform output -raw public_ip_address)" | ./scripts/ci/sanitize.sh
+      - run: terraform output -raw web_url
+      - run: echo "Open http://${APP_IP}/" >>"${GITHUB_STEP_SUMMARY}"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Waits until http://<vm>/health answers 200 from this runner (cloud-init builds the
+# Waits until http://<vm>/health answers 200 from this runner (cloud-init pulls and starts the
 # container on first boot). Prints no addresses. Exit 0 ready, 1 timed out, 2 error.
 set -uo pipefail
 cd "$(dirname "$0")/../.." || exit 2

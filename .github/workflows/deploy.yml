@@ -1,20 +1,31 @@
-# Owner-triggered deployment from trusted main:
-#   plan (azure-plan, Reader)  ->  your approval (azure-deploy)  ->  apply exactly that
-#   plan (skipped if there are no changes), validate with temporary /32 runner access,
-#   remove it, optionally destroy.
-# failure-cleanup (azure-destroy) destroys the workload if apply/validation failed or
-# was cancelled. Raw plans, state and variable values are never printed or uploaded
-# as artifacts; the reviewed plan is kept in the private state container.
+# Owner-triggered deployment of the Atlas Service Desk demo from trusted main:
+#   build-image (no Azure; pushes the scenario's image to GHCR, outputs its digest)
+#   -> plan (azure-plan, Reader; lifetime + expiry, fail-closed policy)
+#   -> your approval (azure-deploy) -> apply exactly that plan (after the pre-apply
+#   lifetime gate), validate, API + browser tests with temporary /32 runner access,
+#   remove it, optional inspection window (after the pre-window gate), destroy.
+# failure-cleanup (azure-destroy) runs if apply failed, was cancelled or was not
+# approved: an apply attempt alone proves nothing, so it compares the pre-apply state
+# snapshot (lineage, serial, resources) with current state and Azure and destroys only
+# what this run provably created; uncertainty is INCONCLUSIVE (manual recovery), and a
+# pre-existing unexpired environment is never destroyed.
+# report prints application and cleanup results separately (no URL, no IP).
+# Raw plans, state and variable values are never printed or uploaded as artifacts.
 name: Deploy
 
 on:
   workflow_dispatch:
     inputs:
-      after_validation:
-        description: "After validation passes"
+      scenario:
+        description: "healthy, or deliberate-failure-ignore-status (fault build; the run fails by design)"
         type: choice
-        options: [destroy, keep-running]
-        default: destroy
+        options: [healthy, deliberate-failure-ignore-status]
+        default: healthy
+      inspection_minutes:
+        description: "Owner inspection window in minutes (healthy scenario only)"
+        type: choice
+        options: ["0", "15", "30", "45"]
+        default: "30"
 
 # Explicit bash = "bash --noprofile --norc -eo pipefail": a failing command is not
 # hidden by a succeeding "| sanitize.sh" or "| tee" later in the pipeline.
@@ -40,9 +51,32 @@ env:
   TFSTATE_CONTAINER: ${{ vars.TFSTATE_CONTAINER }}
 
 jobs:
+  build-image:
+    name: Build and push the app image (no Azure access)
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      app_image: ${{ steps.push.outputs.app_image }}
+      app_variant: ${{ steps.push.outputs.app_variant }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build the scenario's image and push it by digest
+        id: push
+        env:
+          SCENARIO: ${{ inputs.scenario }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./scripts/ci/build-push.sh "${SCENARIO}"
+
   plan:
     name: Plan (sanitised summary)
-    if: github.ref == 'refs/heads/main'
+    needs: build-image
+    if: github.ref == 'refs/heads/main' && needs.build-image.result == 'success'
     runs-on: ubuntu-24.04
     environment: azure-plan
     timeout-minutes: 20
@@ -54,10 +88,21 @@ jobs:
       TF_VAR_admin_source_ip_cidr: ${{ secrets.ADMIN_SOURCE_IP_CIDR }}
       TF_VAR_admin_ssh_public_key: ${{ secrets.ADMIN_SSH_PUBLIC_KEY }}
       TF_VAR_owner: ${{ secrets.OWNER_TAG }}
+      TF_VAR_app_image: ${{ needs.build-image.outputs.app_image }}
+      TF_VAR_app_variant: ${{ needs.build-image.outputs.app_variant }}
+      EXPECTED_APP_IMAGE: ${{ needs.build-image.outputs.app_image }}
+      # Derived from the scenario independently of the build output; plan policy compares.
+      EXPECTED_APP_VARIANT: ${{ inputs.scenario == 'deliberate-failure-ignore-status' && 'broken-ignore-status' || 'healthy' }}
+      SCENARIO: ${{ inputs.scenario }}
+      INSPECTION_MINUTES: ${{ inputs.inspection_minutes }}
     outputs:
       plan_sha256: ${{ steps.summary.outputs.plan_sha256 }}
       has_changes: ${{ steps.summary.outputs.has_changes }}
       plan_blob: ${{ steps.store.outputs.plan_blob }}
+      expires_at: ${{ steps.lifetime.outputs.expires_at }}
+      inspection_minutes: ${{ steps.lifetime.outputs.inspection_minutes }}
+      app_image: ${{ needs.build-image.outputs.app_image }}
+      app_variant: ${{ needs.build-image.outputs.app_variant }}
     steps:
       - name: Mask Azure identifiers for the rest of this job
         # Tenant, subscription and client IDs and the storage account are variables, not
@@ -79,9 +124,14 @@ jobs:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Lifetime - plan expiry (02:00 UK auto-shutdown, 03:30 UTC Destroy, 3 h cap)
+        id: lifetime
+        run: python3 scripts/ci/lifetime.py plan --scenario "${SCENARIO}" --inspection-minutes "${INSPECTION_MINUTES}"
       - name: Terraform init (remote state, Entra ID)
         run: ./scripts/ci/backend-init.sh 2>&1 | ./scripts/ci/sanitize.sh
       - name: Terraform plan (full output kept off the log)
+        env:
+          TF_VAR_expires_at: ${{ steps.lifetime.outputs.expires_at }}
         run: |
           if ! terraform plan -input=false -lock-timeout=5m -no-color -out=tfplan >"${RUNNER_TEMP}/plan.log" 2>&1; then
             echo "terraform plan failed; sanitised tail:"
@@ -107,12 +157,12 @@ jobs:
   apply:
     name: Apply reviewed plan and validate
     needs: plan
-    # Runs even when the plan has no changes, so an existing (kept-running) workload is
-    # still validated and, with after_validation=destroy, destroyed.
+    # Runs even when the plan has no changes, so an existing workload is still tested
+    # and destroyed.
     if: github.ref == 'refs/heads/main' && needs.plan.result == 'success'
     runs-on: ubuntu-24.04
     environment: azure-deploy
-    timeout-minutes: 60
+    timeout-minutes: 120
     permissions:
       contents: read
       id-token: write
@@ -121,9 +171,27 @@ jobs:
       TF_VAR_admin_source_ip_cidr: ${{ secrets.ADMIN_SOURCE_IP_CIDR }}
       TF_VAR_admin_ssh_public_key: ${{ secrets.ADMIN_SSH_PUBLIC_KEY }}
       TF_VAR_owner: ${{ secrets.OWNER_TAG }}
+      TF_VAR_app_image: ${{ needs.plan.outputs.app_image }}
+      TF_VAR_app_variant: ${{ needs.plan.outputs.app_variant }}
+      TF_VAR_expires_at: ${{ needs.plan.outputs.expires_at }}
       EXPECTED_ADMIN_CIDR: ${{ secrets.ADMIN_SOURCE_IP_CIDR }}
+      EXPECTED_APP_IMAGE: ${{ needs.plan.outputs.app_image }}
+      EXPECTED_APP_VARIANT: ${{ needs.plan.outputs.app_variant }}
+      EXPIRES_AT: ${{ needs.plan.outputs.expires_at }}
+      SCENARIO: ${{ inputs.scenario }}
+      INSPECTION_MINUTES: ${{ needs.plan.outputs.inspection_minutes }}
       PLAN_BLOB: ${{ needs.plan.outputs.plan_blob }}
       PLAN_SHA256: ${{ needs.plan.outputs.plan_sha256 }}
+    outputs:
+      stopped_before_apply: ${{ steps.gate.outputs.stopped }}
+      apply_attempted: ${{ steps.attempt.outputs.attempted }}
+      pre_apply_snapshot: ${{ steps.pre_state.outputs.snapshot }}
+      apply_error: ${{ steps.tf_apply.outputs.error }}
+      flow_outcome: ${{ steps.flow.outcome }}
+      ui_outcome: ${{ steps.ui.outcome }}
+      window: ${{ steps.window_gate.outputs.decision }}
+      window_outcome: ${{ steps.window.outcome }}
+      destroy_outcome: ${{ steps.destroy.outcome }}
     steps:
       - name: Mask Azure identifiers for the rest of this job
         # Tenant, subscription and client IDs and the storage account are variables, not
@@ -147,6 +215,16 @@ jobs:
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
       - name: Terraform init (remote state, Entra ID)
         run: ./scripts/ci/backend-init.sh 2>&1 | ./scripts/ci/sanitize.sh
+      - name: Lifetime gate before apply (full budget incl. margin; stop before creating anything)
+        id: gate
+        run: |
+          if python3 scripts/ci/lifetime.py pre-apply --scenario "${SCENARIO}" \
+               --inspection-minutes "${INSPECTION_MINUTES}" --expires-at "${EXPIRES_AT}"; then
+            exit 0
+          fi
+          echo "stopped=true" >>"${GITHUB_OUTPUT}"
+          echo "::error::Stopped before apply: insufficient lifetime. Nothing was created by this run."
+          exit 1
       - name: Fetch the reviewed plan and verify its SHA-256
         if: needs.plan.outputs.has_changes == 'true'
         run: |
@@ -154,9 +232,38 @@ jobs:
             --container-name "${TFSTATE_CONTAINER}" --name "${PLAN_BLOB}" --file tfplan \
             --no-progress --only-show-errors --output none
           echo "${PLAN_SHA256}  tfplan" | sha256sum -c --strict -
-      - name: Apply exactly the reviewed plan
+      - name: Record the pre-apply state (lineage, serial, resources; for failure-cleanup ownership)
+        id: pre_state
         if: needs.plan.outputs.has_changes == 'true'
-        run: terraform apply -input=false -lock-timeout=5m -no-color tfplan 2>&1 | ./scripts/ci/sanitize.sh
+        run: |
+          terraform state pull >"${RUNNER_TEMP}/pre.tfstate"
+          snapshot="$(python3 scripts/ci/state_snapshot.py "${RUNNER_TEMP}/pre.tfstate")"
+          rm -f "${RUNNER_TEMP}/pre.tfstate"
+          echo "snapshot=${snapshot}" >>"${GITHUB_OUTPUT}"
+      - name: Record that apply is being attempted
+        id: attempt
+        if: needs.plan.outputs.has_changes == 'true'
+        run: echo "attempted=true" >>"${GITHUB_OUTPUT}"
+      - name: Apply exactly the reviewed plan
+        id: tf_apply
+        if: needs.plan.outputs.has_changes == 'true'
+        run: |
+          rc=0
+          terraform apply -input=false -lock-timeout=5m -no-color tfplan 2>&1 | tee "${RUNNER_TEMP}/apply.log" | ./scripts/ci/sanitize.sh || rc=$?
+          if (( rc != 0 )); then
+            kind=other
+            if [[ -f errored.tfstate ]] || grep -qE "Failed to (persist|save) state" "${RUNNER_TEMP}/apply.log"; then
+              kind=state-persist-failed
+            elif grep -q "Error acquiring the state lock" "${RUNNER_TEMP}/apply.log"; then
+              kind=state-lock
+            elif grep -q "Saved plan is stale" "${RUNNER_TEMP}/apply.log"; then
+              kind=stale-plan
+            fi
+            echo "error=${kind}" >>"${GITHUB_OUTPUT}"
+            echo "::error::terraform apply failed (${kind}); failure-cleanup decides ownership from the state snapshots"
+          fi
+          rm -f "${RUNNER_TEMP}/apply.log"
+          exit "${rc}"
       - name: Delete the stored plan
         if: always() && needs.plan.outputs.has_changes == 'true'
         run: |
@@ -164,6 +271,12 @@ jobs:
           az storage blob delete --auth-mode login --account-name "${TFSTATE_STORAGE_ACCOUNT}" \
             --container-name "${TFSTATE_CONTAINER}" --name "${PLAN_BLOB}" --only-show-errors --output none \
             || echo "plan blob not deleted now; the 7-day lifecycle rule removes it"
+      - name: App address (masked; the URL is delivered privately, never logged)
+        run: |
+          ip="$(terraform output -raw public_ip_address)"
+          [[ "${ip}" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || { echo "ERROR: invalid public_ip_address output"; exit 1; }
+          echo "::add-mask::${ip}"
+          echo "APP_IP=${ip}" >>"${GITHUB_ENV}"
       - name: Runner public IP (masked)
         run: |
           cidr="$(./scripts/ci/runner-ip.sh)"
@@ -172,7 +285,8 @@ jobs:
           echo "RUNNER_CIDR=${cidr}" >>"${GITHUB_ENV}"
       - name: Temporary /32 access for this runner
         run: ./scripts/ci/temp-access.sh add "${RUNNER_CIDR}"
-      - name: Wait for the web service
+      - name: Wait for the ticket app
+        id: health
         run: ./scripts/ci/wait-for-health.sh
       - name: Public endpoint checks (from the runner)
         run: ./scripts/azure-validate.sh public 2>&1 | ./scripts/ci/sanitize.sh
@@ -180,26 +294,44 @@ jobs:
         run: |
           printf '%s\n' "${TF_VAR_admin_ssh_public_key}" >"${RUNNER_TEMP}/admin.pub"
           ADMIN_PUBKEY_FILE="${RUNNER_TEMP}/admin.pub" ./scripts/azure-validate.sh in-vm 2>&1 | ./scripts/ci/sanitize.sh
+      - name: Application test - independent API flow (create, update status, read back)
+        id: flow
+        if: ${{ !cancelled() && steps.health.outcome == 'success' }}
+        run: python3 tests/app/flow_check.py --base-url "http://${APP_IP}" --label "CI-TEST ${GITHUB_RUN_ID}" 2>&1 | ./scripts/ci/sanitize.sh
+      - name: Application test - browser (Playwright, Chromium)
+        id: ui
+        if: ${{ !cancelled() && steps.health.outcome == 'success' }}
+        run: |
+          docker build -q -t atlas-ui-check tests/app/ui >/dev/null
+          docker run --rm --network host -v "${PWD}/tests/app/ui:/ui:ro" atlas-ui-check \
+            python3 /ui/ui_check.py --base-url "http://${APP_IP}" --label "CI-TEST ${GITHUB_RUN_ID}" --expect-expiry 2>&1 | ./scripts/ci/sanitize.sh
       - name: Remove temporary runner access (always)
         if: always()
         run: ./scripts/ci/temp-access.sh remove 2>&1 | ./scripts/ci/sanitize.sh
       - name: Confirm runner access is blocked again
         run: ./scripts/azure-validate.sh blocked 2>&1 | ./scripts/ci/sanitize.sh
-      - name: Destroy workload after successful validation
-        if: success() && inputs.after_validation == 'destroy'
+      - name: Lifetime gate before the inspection window (never shortened)
+        id: window_gate
+        if: success() && inputs.scenario == 'healthy' && needs.plan.outputs.inspection_minutes != '0'
+        run: |
+          python3 scripts/ci/lifetime.py pre-window --scenario "${SCENARIO}" \
+            --inspection-minutes "${INSPECTION_MINUTES}" --expires-at "${EXPIRES_AT}" || [[ $? == 1 ]]
+      - name: Inspection window (URL delivered privately; cancel the run to end early)
+        id: window
+        if: success() && steps.window_gate.outputs.decision == 'pass'
+        run: ./scripts/ci/inspection-window.sh
+      - name: Destroy workload
+        id: destroy
+        if: success()
         run: |
           terraform destroy -auto-approve -input=false -lock-timeout=5m -no-color 2>&1 | ./scripts/ci/sanitize.sh
           KEEP_RESOURCE_GROUP=1 ./scripts/verify-cleanup.sh 2>&1 | ./scripts/ci/sanitize.sh
-      - name: Reminder - workload left running
-        if: success() && inputs.after_validation == 'keep-running'
-        run: |
-          echo "::warning::Workload left running. It is deallocated at 02:00 UK time and destroyed by the nightly Destroy workflow; run Destroy when finished." 
 
   failure-cleanup:
     name: Cleanup after failed or cancelled deployment
     needs: [plan, apply]
     if: >-
-      always() && github.ref == 'refs/heads/main' &&
+      always() && github.ref == 'refs/heads/main' && needs.plan.result == 'success' &&
       (needs.apply.result == 'failure' || needs.apply.result == 'cancelled')
     runs-on: ubuntu-24.04
     environment: azure-destroy
@@ -212,6 +344,16 @@ jobs:
       TF_VAR_admin_source_ip_cidr: ${{ secrets.ADMIN_SOURCE_IP_CIDR }}
       TF_VAR_admin_ssh_public_key: ${{ secrets.ADMIN_SSH_PUBLIC_KEY }}
       TF_VAR_owner: ${{ secrets.OWNER_TAG }}
+      TF_VAR_app_image: ${{ needs.plan.outputs.app_image }}
+      TF_VAR_app_variant: ${{ needs.plan.outputs.app_variant }}
+      TF_VAR_expires_at: ${{ needs.plan.outputs.expires_at }}
+      APPLY_ATTEMPTED: ${{ needs.apply.outputs.apply_attempted }}
+      OWN_EXPIRES_AT: ${{ needs.plan.outputs.expires_at }}
+      PRE_APPLY_SNAPSHOT: ${{ needs.apply.outputs.pre_apply_snapshot }}
+      APPLY_ERROR: ${{ needs.apply.outputs.apply_error }}
+    outputs:
+      decision: ${{ steps.cleanup.outputs.decision }}
+      result: ${{ steps.cleanup.outputs.result }}
     steps:
       - name: Mask Azure identifiers for the rest of this job
         # Tenant, subscription and client IDs and the storage account are variables, not
@@ -237,9 +379,40 @@ jobs:
         run: ./scripts/ci/backend-init.sh 2>&1 | ./scripts/ci/sanitize.sh
       - name: Remove temporary runner access if it is still there
         run: ./scripts/ci/temp-access.sh remove 2>&1 | ./scripts/ci/sanitize.sh
-      - name: Destroy the workload
+      - name: Guarded destroy (only what this run provably created; protect on uncertainty)
+        id: cleanup
         if: always()
-        run: terraform destroy -auto-approve -input=false -lock-timeout=10m -no-color 2>&1 | ./scripts/ci/sanitize.sh
-      - name: Verify cleanup (resource group kept, empty)
-        if: always()
-        run: KEEP_RESOURCE_GROUP=1 ./scripts/verify-cleanup.sh 2>&1 | ./scripts/ci/sanitize.sh
+        run: MODE=failure-cleanup ./scripts/ci/guarded-destroy.sh 2>&1 | ./scripts/ci/sanitize.sh
+
+  report:
+    name: Report (application and cleanup results, no URL)
+    needs: [build-image, plan, apply, failure-cleanup]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    env:
+      SCENARIO: ${{ inputs.scenario }}
+      INSPECTION_MINUTES: ${{ needs.plan.outputs.inspection_minutes || '0' }}
+      APP_IMAGE: ${{ needs.build-image.outputs.app_image }}
+      EXPIRES_AT: ${{ needs.plan.outputs.expires_at }}
+      PLAN_RESULT: ${{ needs.plan.result }}
+      APPLY_RESULT: ${{ needs.apply.result }}
+      HAS_CHANGES: ${{ needs.plan.outputs.has_changes }}
+      STOPPED_BEFORE_APPLY: ${{ needs.apply.outputs.stopped_before_apply }}
+      APPLY_ATTEMPTED: ${{ needs.apply.outputs.apply_attempted }}
+      FLOW_OUTCOME: ${{ needs.apply.outputs.flow_outcome }}
+      UI_OUTCOME: ${{ needs.apply.outputs.ui_outcome }}
+      WINDOW: ${{ needs.apply.outputs.window }}
+      WINDOW_OUTCOME: ${{ needs.apply.outputs.window_outcome }}
+      DESTROY_OUTCOME: ${{ needs.apply.outputs.destroy_outcome }}
+      CLEANUP_JOB_RESULT: ${{ needs.failure-cleanup.result }}
+      CLEANUP_DECISION: ${{ needs.failure-cleanup.outputs.decision }}
+      CLEANUP_RESULT: ${{ needs.failure-cleanup.outputs.result }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Application vs cleanup report (fails the run unless the app passed)
+        run: python3 scripts/ci/run-report.py | tee -a "${GITHUB_STEP_SUMMARY}"

@@ -1,0 +1,36 @@
+# One-off / manual image build without Azure: pushes both ticket-app variants to GHCR
+# so the package exists and the owner can make it public before the first Deploy.
+# Deploy builds its own image for the chosen scenario; this workflow is not required
+# for a Deploy run.
+name: Build image
+
+on:
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash
+
+permissions: {}
+
+jobs:
+  build:
+    name: Build and push both variants (no Azure access)
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Healthy image
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./scripts/ci/build-push.sh healthy
+      - name: Deliberate fault build (only deployable with scenario deliberate-failure-ignore-status)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./scripts/ci/build-push.sh deliberate-failure-ignore-status

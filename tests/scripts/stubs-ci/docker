@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Stub docker for build-push tests. DOCKER_SCENARIO: ok | wrong-label | push-fail | login-fail | no-digest
+echo "docker $*" >>"${STUB_LOG:?}"
+s="${DOCKER_SCENARIO:-ok}"
+case "$1" in
+  login) cat >/dev/null; [[ "${s}" == login-fail ]] && exit 1; exit 0 ;;
+  build) exit 0 ;;
+  push) [[ "${s}" == push-fail ]] && exit 1; exit 0 ;;
+  image)
+    if [[ "$*" == *atlas.variant* ]]; then
+      t="${*: -1}"; v="${t##*-}"; [[ "${t}" == *broken-ignore-status ]] && v=broken-ignore-status
+      [[ "${s}" == wrong-label ]] && v=healthy-but-wrong
+      echo "${v}"
+    elif [[ "${s}" != no-digest ]]; then
+      echo "ghcr.io/shayze01/atlas-tickets@sha256:$(printf 'c3%.0s' {1..32})"
+    fi
+    exit 0 ;;
+esac
+exit 0
