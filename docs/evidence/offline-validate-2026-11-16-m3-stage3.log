@@ -70,13 +70,13 @@ PASS: expiry timer catches up at boot if the expiry passed while stopped
 PASS: app service runs the boot-time expiry check before starting
 PASS: timer and app service enabled
 PASS: no image build or mutable tag on the VM
-PASS: rendered cloud-init is 5732 bytes (< 32 KiB, Azure limit 64 KiB)
+PASS: rendered cloud-init is 7330 bytes (< 32 KiB, Azure limit 64 KiB)
 
 ==> cloud-init schema validation
-2026-11-16 21:17:37,971 - sources[WARNING]: failed loading pickle in /var/lib/cloud/instance/obj.pkl: [Errno 13] Permission denied: '/var/lib/cloud/instance/obj.pkl'
-2026-11-16 21:17:37,973 - log_util.py[WARNING]: Failed pickling datasource to /var/lib/cloud/instance/obj.pkl
-2026-11-16 21:17:37,973 - log_util.py[WARNING]: Getting data from <class 'cloudinit.sources.DataSourceNone.DataSourceNone'> failed
-2026-11-16 21:17:37,981 - schema.py[WARNING]: datasource not detected, using default instance-data/user-data paths.
+2026-11-16 21:44:46,616 - sources[WARNING]: failed loading pickle in /var/lib/cloud/instance/obj.pkl: [Errno 13] Permission denied: '/var/lib/cloud/instance/obj.pkl'
+2026-11-16 21:44:46,618 - log_util.py[WARNING]: Failed pickling datasource to /var/lib/cloud/instance/obj.pkl
+2026-11-16 21:44:46,619 - log_util.py[WARNING]: Getting data from <class 'cloudinit.sources.DataSourceNone.DataSourceNone'> failed
+2026-11-16 21:44:46,626 - schema.py[WARNING]: datasource not detected, using default instance-data/user-data paths.
 Valid schema build/cloud-init.rendered.yaml
 
 ==> Expiry-tag carriers and state-to-Azure mapping tests
@@ -105,13 +105,14 @@ test_fixture_contains_every_workload_resource (__main__.MappingCoversTheConfigur
 test_only_exact_real_utc_times (__main__.ParseExpiry) ... ok
 
 ----------------------------------------------------------------------
-Ran 23 tests in 0.066s
+Ran 23 tests in 0.065s
 
 OK
 
 ==> Guest expiry script tests (stubbed docker/systemctl)
 PASS: start: unexpired, digest matches -> pulls by digest, runs hardened on :80
 PASS: boot after expiry: app never started, data deleted, service disabled
+PASS: pull spans expiry -> app not started, guest app stop runs instead
 PASS: malformed expiry -> refuses to start, no docker calls
 PASS: impossible date (month 13) -> refuses to start
 PASS: missing expiry -> refuses to start
@@ -119,9 +120,14 @@ PASS: env file is parsed, never executed (command substitution stays inert)
 PASS: mutable tag instead of digest -> refuses to pull
 PASS: image from another namespace -> refuses to pull
 PASS: pulled image lacks the planned digest -> not run
-PASS: guest app stop (timer): stops app, deletes data, never touches Azure
+PASS: guest app stop (timer): removes, verifies absence, never touches Azure
+PASS: guest app stop: already absent -> success after verification
+PASS: guest app stop: container removal fails and it remains -> exit 1, no success
+PASS: guest app stop: volume removal fails and it remains -> exit 1
+PASS: guest app stop: Docker unreachable -> cannot verify, exit 1
+PASS: boot after expiry with a failed removal -> app service fails (exit 1)
 
-Guest expiry tests: 10/10 passed
+Guest expiry tests: 16/16 passed
 
 ==> Script behaviour tests (stubbed az/terraform/curl/ssh, no network)
 == verify-cleanup.sh ==
@@ -346,14 +352,14 @@ Building atlas-tickets:local-test, atlas-tickets:local-test-broken-ignore-status
 == Unit tests (inside the image)
 .............
 ----------------------------------------------------------------------
-Ran 13 tests in 0.081s
+Ran 13 tests in 0.083s
 
 OK
 PASS: unit tests pass
 == Container
 PASS: /health returns ok
 PASS: /version reports variant healthy
-PASS: /version reports revision b2cfd75c0359
+PASS: /version reports revision 447418375a18
 PASS: image label atlas.variant=healthy (got healthy)
 PASS: container runs as non-root (uid 10001)
 PASS: root filesystem is read-only
