@@ -19,11 +19,14 @@ def app_row():
         return "NOT RUN", "stopped before apply: insufficient lifetime (nothing created by this run)"
     if E("APPLY_RESULT") in ("", "skipped"):
         return "NOT RUN", f"apply job {E('APPLY_RESULT') or 'did not run'} (plan result: {E('PLAN_RESULT', '?')})"
-    if E("APPLY_ATTEMPTED") != "true":
+    no_change = E("HAS_CHANGES") == "false"
+    if E("APPLY_ATTEMPTED") != "true" and not no_change:
         return "NOT RUN", f"apply not attempted (apply job {E('APPLY_RESULT')}: plan rejected, not approved, hash mismatch or earlier failure)"
     flow, ui = E("FLOW_OUTCOME") or "not reached", E("UI_OUTCOME") or "not reached"
     status = "PASS" if flow == "success" and ui == "success" else "FAIL"
     detail = f"API flow: {flow}; browser: {ui}"
+    if no_change and E("APPLY_ATTEMPTED") != "true":
+        detail += " (no-change plan: apply skipped, tests ran against the existing workload)"
     if status == "FAIL" and E("SCENARIO") == "deliberate-failure-ignore-status":
         detail += " - expected for scenario deliberate-failure-ignore-status (status updates are ignored)"
     return status, detail

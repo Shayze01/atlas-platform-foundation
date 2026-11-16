@@ -97,6 +97,42 @@ class Report(unittest.TestCase):
         self.assertEqual(rc, 1)
         self.assertIn("| Cleanup | PASS | nothing to clean: apply never ran |", out)
 
+    # A no-change plan skips terraform apply (APPLY_ATTEMPTED unset); the tests still run
+    # against the existing workload and their real results are reported.
+    NO_CHANGE = dict(HAS_CHANGES="false", APPLY_ATTEMPTED="")
+
+    def test_no_change_plan_with_passing_tests_passes(self):
+        rc, out = report(**self.NO_CHANGE)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("| Application tests | PASS | API flow: success; browser: success (no-change plan", out)
+        self.assertIn("**PASSED**", out)
+
+    def test_no_change_plan_with_failing_test_fails(self):
+        rc, out = report(**self.NO_CHANGE, FLOW_OUTCOME="failure", WINDOW="", WINDOW_OUTCOME="", DESTROY_OUTCOME="skipped",
+                         APPLY_RESULT="failure", CLEANUP_JOB_RESULT="success", CLEANUP_DECISION="PROTECT", CLEANUP_RESULT="PROTECT")
+        self.assertEqual(rc, 1)
+        self.assertIn("| Application tests | FAIL | API flow: failure; browser: success (no-change plan", out)
+        self.assertIn("**FAILED**", out)
+
+    def test_no_change_plan_still_needs_deployment_window_and_cleanup(self):
+        for over in (dict(APPLY_RESULT="failure", INSPECTION_MINUTES="0", WINDOW="", DESTROY_OUTCOME="skipped",
+                          CLEANUP_JOB_RESULT="success", CLEANUP_RESULT="PROTECT"),
+                     dict(WINDOW="refused", WINDOW_OUTCOME="skipped"),
+                     dict(WINDOW_OUTCOME="cancelled", APPLY_RESULT="cancelled", DESTROY_OUTCOME="skipped",
+                          CLEANUP_JOB_RESULT="success", CLEANUP_RESULT="PROTECT"),
+                     dict(DESTROY_OUTCOME="failure", APPLY_RESULT="failure", CLEANUP_JOB_RESULT="failure",
+                          CLEANUP_RESULT="INCONCLUSIVE")):
+            with self.subTest(**over):
+                rc, out = report(**self.NO_CHANGE, **over)
+                self.assertEqual(rc, 1, out)
+                self.assertIn("| Application tests | PASS |", out)
+                self.assertIn("**FAILED**", out)
+
+    def test_unknown_plan_changes_and_no_attempt_is_not_run(self):
+        rc, out = report(HAS_CHANGES="", APPLY_ATTEMPTED="")
+        self.assertEqual(rc, 1)
+        self.assertIn("| Application tests | NOT RUN | apply not attempted", out)
+
     def test_no_url_or_ip(self):
         out = report()[1]
         self.assertNotRegex(out, r"https?://(?!github)|\b\d{1,3}(\.\d{1,3}){3}\b")

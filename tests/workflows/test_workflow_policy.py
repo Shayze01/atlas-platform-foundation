@@ -211,6 +211,14 @@ def m3_rules(dj, destroy_jobs):
     results.append(("apply attempt is recorded immediately before terraform apply",
                     attempt >= 0 and tf_apply == attempt + 1 and st[attempt].get("id") == "attempt"
                     and st[attempt].get("if") == st[tf_apply].get("if")))
+    pre = step_index(st, r"state_snapshot\.py")
+    results.append(("pre-apply state snapshot is taken before the attempt marker and passed to failure-cleanup",
+                    0 <= gate < pre < attempt and st[pre].get("id") == "pre_state"
+                    and "steps.pre_state.outputs.snapshot" in str((apply.get("outputs") or {}).get("pre_apply_snapshot"))
+                    and "needs.apply.outputs.pre_apply_snapshot" in str((fc.get("env") or {}).get("PRE_APPLY_SNAPSHOT"))
+                    and "needs.apply.outputs.apply_error" in str((fc.get("env") or {}).get("APPLY_ERROR"))))
+    results.append(("report knows whether the plan had changes (no-change plans report real test results)",
+                    "needs.plan.outputs.has_changes" in str((rep.get("env") or {}).get("HAS_CHANGES"))))
     blocked, wgate = step_index(st, r"azure-validate\.sh blocked"), step_index(st, r"lifetime\.py pre-window")
     window, destroy = step_index(st, r"inspection-window\.sh"), step_index(st, r"terraform destroy")
     results.append(("inspection window: after runner access is blocked, after the pre-window gate, only on decision == 'pass'",

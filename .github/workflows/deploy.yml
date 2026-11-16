@@ -5,8 +5,10 @@
 #   lifetime gate), validate, API + browser tests with temporary /32 runner access,
 #   remove it, optional inspection window (after the pre-window gate), destroy.
 # failure-cleanup (azure-destroy) runs if apply failed, was cancelled or was not
-# approved: it destroys only what this run attempted to apply; a run that stopped
-# before apply never destroys a pre-existing unexpired environment.
+# approved: an apply attempt alone proves nothing, so it compares the pre-apply state
+# snapshot (lineage, serial, resources) with current state and Azure and destroys only
+# what this run provably created; uncertainty is INCONCLUSIVE (manual recovery), and a
+# pre-existing unexpired environment is never destroyed.
 # report prints application and cleanup results separately (no URL, no IP).
 # Raw plans, state and variable values are never printed or uploaded as artifacts.
 name: Deploy
@@ -183,6 +185,8 @@ jobs:
     outputs:
       stopped_before_apply: ${{ steps.gate.outputs.stopped }}
       apply_attempted: ${{ steps.attempt.outputs.attempted }}
+      pre_apply_snapshot: ${{ steps.pre_state.outputs.snapshot }}
+      apply_error: ${{ steps.tf_apply.outputs.error }}
       flow_outcome: ${{ steps.flow.outcome }}
       ui_outcome: ${{ steps.ui.outcome }}
       window: ${{ steps.window_gate.outputs.decision }}
@@ -228,13 +232,38 @@ jobs:
             --container-name "${TFSTATE_CONTAINER}" --name "${PLAN_BLOB}" --file tfplan \
             --no-progress --only-show-errors --output none
           echo "${PLAN_SHA256}  tfplan" | sha256sum -c --strict -
+      - name: Record the pre-apply state (lineage, serial, resources; for failure-cleanup ownership)
+        id: pre_state
+        if: needs.plan.outputs.has_changes == 'true'
+        run: |
+          terraform state pull >"${RUNNER_TEMP}/pre.tfstate"
+          snapshot="$(python3 scripts/ci/state_snapshot.py "${RUNNER_TEMP}/pre.tfstate")"
+          rm -f "${RUNNER_TEMP}/pre.tfstate"
+          echo "snapshot=${snapshot}" >>"${GITHUB_OUTPUT}"
       - name: Record that apply is being attempted
         id: attempt
         if: needs.plan.outputs.has_changes == 'true'
         run: echo "attempted=true" >>"${GITHUB_OUTPUT}"
       - name: Apply exactly the reviewed plan
+        id: tf_apply
         if: needs.plan.outputs.has_changes == 'true'
-        run: terraform apply -input=false -lock-timeout=5m -no-color tfplan 2>&1 | ./scripts/ci/sanitize.sh
+        run: |
+          rc=0
+          terraform apply -input=false -lock-timeout=5m -no-color tfplan 2>&1 | tee "${RUNNER_TEMP}/apply.log" | ./scripts/ci/sanitize.sh || rc=$?
+          if (( rc != 0 )); then
+            kind=other
+            if [[ -f errored.tfstate ]] || grep -qE "Failed to (persist|save) state" "${RUNNER_TEMP}/apply.log"; then
+              kind=state-persist-failed
+            elif grep -q "Error acquiring the state lock" "${RUNNER_TEMP}/apply.log"; then
+              kind=state-lock
+            elif grep -q "Saved plan is stale" "${RUNNER_TEMP}/apply.log"; then
+              kind=stale-plan
+            fi
+            echo "error=${kind}" >>"${GITHUB_OUTPUT}"
+            echo "::error::terraform apply failed (${kind}); failure-cleanup decides ownership from the state snapshots"
+          fi
+          rm -f "${RUNNER_TEMP}/apply.log"
+          exit "${rc}"
       - name: Delete the stored plan
         if: always() && needs.plan.outputs.has_changes == 'true'
         run: |
@@ -320,6 +349,8 @@ jobs:
       TF_VAR_expires_at: ${{ needs.plan.outputs.expires_at }}
       APPLY_ATTEMPTED: ${{ needs.apply.outputs.apply_attempted }}
       OWN_EXPIRES_AT: ${{ needs.plan.outputs.expires_at }}
+      PRE_APPLY_SNAPSHOT: ${{ needs.apply.outputs.pre_apply_snapshot }}
+      APPLY_ERROR: ${{ needs.apply.outputs.apply_error }}
     outputs:
       decision: ${{ steps.cleanup.outputs.decision }}
       result: ${{ steps.cleanup.outputs.result }}
@@ -348,7 +379,7 @@ jobs:
         run: ./scripts/ci/backend-init.sh 2>&1 | ./scripts/ci/sanitize.sh
       - name: Remove temporary runner access if it is still there
         run: ./scripts/ci/temp-access.sh remove 2>&1 | ./scripts/ci/sanitize.sh
-      - name: Guarded destroy (only what this run attempted to apply; protect on uncertainty)
+      - name: Guarded destroy (only what this run provably created; protect on uncertainty)
         id: cleanup
         if: always()
         run: MODE=failure-cleanup ./scripts/ci/guarded-destroy.sh 2>&1 | ./scripts/ci/sanitize.sh
@@ -368,6 +399,7 @@ jobs:
       EXPIRES_AT: ${{ needs.plan.outputs.expires_at }}
       PLAN_RESULT: ${{ needs.plan.result }}
       APPLY_RESULT: ${{ needs.apply.result }}
+      HAS_CHANGES: ${{ needs.plan.outputs.has_changes }}
       STOPPED_BEFORE_APPLY: ${{ needs.apply.outputs.stopped_before_apply }}
       APPLY_ATTEMPTED: ${{ needs.apply.outputs.apply_attempted }}
       FLOW_OUTCOME: ${{ needs.apply.outputs.flow_outcome }}
