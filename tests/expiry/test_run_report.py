@@ -39,6 +39,14 @@ class Report(unittest.TestCase):
         self.assertIn("| Cleanup | PASS | via failure-cleanup: destroyed and verified |", out)
         self.assertIn("**FAILED**", out)
 
+    def test_failed_deployment_check_with_passing_tests_is_failed(self):
+        rc, out = report(INSPECTION_MINUTES="0", WINDOW="", WINDOW_OUTCOME="", DESTROY_OUTCOME="skipped",
+                         APPLY_RESULT="failure", CLEANUP_JOB_RESULT="success", CLEANUP_DECISION="DESTROY", CLEANUP_RESULT="DESTROYED")
+        self.assertEqual(rc, 1)
+        self.assertIn("| Application tests | PASS |", out)
+        self.assertIn("| Deployment job | FAIL | apply job failure", out)
+        self.assertIn("**FAILED**", out)
+
     def test_deliberate_failure_scenario(self):
         rc, out = report(SCENARIO="deliberate-failure-ignore-status", INSPECTION_MINUTES="0", FLOW_OUTCOME="failure",
                          UI_OUTCOME="failure", WINDOW="", DESTROY_OUTCOME="skipped", APPLY_RESULT="failure",

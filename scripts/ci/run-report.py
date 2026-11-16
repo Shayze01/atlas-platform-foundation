@@ -29,6 +29,13 @@ def app_row():
     return status, detail
 
 
+def deploy_row():
+    r = E("APPLY_RESULT") or "did not run"
+    if r == "success":
+        return "PASS", "apply job succeeded: apply, public/in-VM/blocked checks, tests, window, destroy"
+    return "FAIL", f"apply job {r} (a deployment check, test or step failed, was cancelled or was not approved)"
+
+
 def window_row():
     if E("SCENARIO") == "deliberate-failure-ignore-status":
         return "n/a", "disabled for the deliberate-failure scenario"
@@ -60,9 +67,11 @@ def cleanup_row():
 
 
 def main():
-    rows = [("Application tests",) + app_row(), ("Inspection window",) + window_row(), ("Cleanup",) + cleanup_row()]
+    rows = [("Application tests",) + app_row(), ("Deployment job",) + deploy_row(),
+            ("Inspection window",) + window_row(), ("Cleanup",) + cleanup_row()]
     healthy = E("SCENARIO") == "healthy"
-    ok = (healthy and rows[0][1] == "PASS" and rows[1][1] in ("n/a", "DONE") and rows[2][1] == "PASS")
+    ok = (healthy and rows[0][1] == "PASS" and rows[1][1] == "PASS" and rows[2][1] in ("n/a", "DONE")
+          and rows[3][1] == "PASS")
     print("### Atlas deployment report\n")
     print(f"- Scenario: `{E('SCENARIO', '?')}`; image: `{E('APP_IMAGE') or 'not built'}`; ExpiresAt (UTC): `{E('EXPIRES_AT') or 'not planned'}`")
     print("- URL: delivered privately (never written to this public log)\n")
