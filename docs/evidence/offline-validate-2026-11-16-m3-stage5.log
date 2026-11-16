@@ -70,13 +70,13 @@ PASS: expiry timer catches up at boot if the expiry passed while stopped
 PASS: app service runs the boot-time expiry check before starting
 PASS: timer and app service enabled
 PASS: no image build or mutable tag on the VM
-PASS: rendered cloud-init is 5732 bytes (< 32 KiB, Azure limit 64 KiB)
+PASS: rendered cloud-init is 6032 bytes (< 32 KiB, Azure limit 64 KiB)
 
 ==> cloud-init schema validation
-2026-11-16 21:24:54,560 - sources[WARNING]: failed loading pickle in /var/lib/cloud/instance/obj.pkl: [Errno 13] Permission denied: '/var/lib/cloud/instance/obj.pkl'
-2026-11-16 21:24:54,563 - log_util.py[WARNING]: Failed pickling datasource to /var/lib/cloud/instance/obj.pkl
-2026-11-16 21:24:54,563 - log_util.py[WARNING]: Getting data from <class 'cloudinit.sources.DataSourceNone.DataSourceNone'> failed
-2026-11-16 21:24:54,571 - schema.py[WARNING]: datasource not detected, using default instance-data/user-data paths.
+2026-11-16 21:26:20,293 - sources[WARNING]: failed loading pickle in /var/lib/cloud/instance/obj.pkl: [Errno 13] Permission denied: '/var/lib/cloud/instance/obj.pkl'
+2026-11-16 21:26:20,295 - log_util.py[WARNING]: Failed pickling datasource to /var/lib/cloud/instance/obj.pkl
+2026-11-16 21:26:20,295 - log_util.py[WARNING]: Getting data from <class 'cloudinit.sources.DataSourceNone.DataSourceNone'> failed
+2026-11-16 21:26:20,303 - schema.py[WARNING]: datasource not detected, using default instance-data/user-data paths.
 Valid schema build/cloud-init.rendered.yaml
 
 ==> Expiry-tag carriers and state-to-Azure mapping tests
@@ -105,13 +105,14 @@ test_fixture_contains_every_workload_resource (__main__.MappingCoversTheConfigur
 test_only_exact_real_utc_times (__main__.ParseExpiry) ... ok
 
 ----------------------------------------------------------------------
-Ran 23 tests in 0.063s
+Ran 23 tests in 0.064s
 
 OK
 
 ==> Guest expiry script tests (stubbed docker/systemctl)
 PASS: start: unexpired, digest matches -> pulls by digest, runs hardened on :80
 PASS: boot after expiry: app never started, data deleted, service disabled
+PASS: pull spans expiry -> app not started, guest app stop runs instead
 PASS: malformed expiry -> refuses to start, no docker calls
 PASS: impossible date (month 13) -> refuses to start
 PASS: missing expiry -> refuses to start
@@ -121,7 +122,7 @@ PASS: image from another namespace -> refuses to pull
 PASS: pulled image lacks the planned digest -> not run
 PASS: guest app stop (timer): stops app, deletes data, never touches Azure
 
-Guest expiry tests: 10/10 passed
+Guest expiry tests: 11/11 passed
 
 ==> Lifetime gates: plan expiry, pre-apply, pre-window, 02:00 UK / 03:30 UTC
 test_rejected (__main__.BadInput) ... ok
@@ -144,7 +145,7 @@ test_window_refused_before_auto_shutdown (__main__.PreWindow) ... ok
 test_window_starts_only_if_it_fits_in_full (__main__.PreWindow) ... ok
 
 ----------------------------------------------------------------------
-Ran 18 tests in 0.035s
+Ran 18 tests in 0.037s
 
 OK
 
@@ -174,7 +175,7 @@ test_sweep_unreadable_state_json (__main__.GuardedDestroy) ... ok
 test_unknown_attempt_but_resources_carry_this_runs_expiry (__main__.GuardedDestroy) ... ok
 
 ----------------------------------------------------------------------
-Ran 22 tests in 0.776s
+Ran 22 tests in 0.783s
 
 OK
 
@@ -192,7 +193,7 @@ test_stopped_before_apply (__main__.Report) ... ok
 test_window_refused_fails_the_run (__main__.Report) ... ok
 
 ----------------------------------------------------------------------
-Ran 11 tests in 0.141s
+Ran 11 tests in 0.241s
 
 OK
 
@@ -452,14 +453,14 @@ Building atlas-tickets:local-test, atlas-tickets:local-test-broken-ignore-status
 == Unit tests (inside the image)
 .............
 ----------------------------------------------------------------------
-Ran 13 tests in 0.079s
+Ran 13 tests in 0.080s
 
 OK
 PASS: unit tests pass
 == Container
 PASS: /health returns ok
 PASS: /version reports variant healthy
-PASS: /version reports revision 82cd87621770
+PASS: /version reports revision f974756b93b1
 PASS: image label atlas.variant=healthy (got healthy)
 PASS: container runs as non-root (uid 10001)
 PASS: root filesystem is read-only

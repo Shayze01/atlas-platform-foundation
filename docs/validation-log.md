@@ -540,7 +540,7 @@ Raw output: [`evidence/offline-validate-2026-11-16-m3-stage3.log`](evidence/offl
 | `terraform test`: digest-only `app_image`, variant, exact real-UTC `expires_at`, `ExpiresAt`/`AppVariant` tags, cloud-init pins image and expiry | 23/23 (6 new rejections) |
 | Rendered cloud-init: embedded scripts byte-for-byte, env file, timer `OnCalendar` in UTC with `Persistent=true`, no build/tag, 5.4 KB; schema valid | 10/10 |
 | Expiry-tag carriers and state-to-Azure mapping on a complete deployment (all rules, association, managed OS disk), drift guard against the `.tf` files, every protect-on-uncertainty case | 23/23 |
-| Guest scripts: past expiry never starts the app and deletes data; malformed/impossible/missing expiry, tag, foreign namespace, digest mismatch refused; env file never executed | 10/10 |
+| Guest scripts: past expiry never starts the app and deletes data; a pull spanning the expiry never starts it; malformed/impossible/missing expiry, tag, foreign namespace, digest mismatch refused; env file never executed | 11/11 (after the Devin Review fix `2db655f`; 10/10 in the Stage 3 log) |
 | Plan policy (14 checks) incl. fault build refused for `healthy`, healthy refused for the failure scenario, cap, missing carrier tag, cloud-init mismatch; `azure-validate` digest/timer/variant checks | script tests 158/158 |
 
 ## 14. Milestone 3 Stage 4: workflows, lifetime gates, guarded cleanup, sweep, report (executed 2026-11-16, offline)
