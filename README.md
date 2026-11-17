@@ -29,7 +29,12 @@ app, the Atlas Service Desk demo (fictional data only), on this infrastructure:
 > limitations and anything untested are in [`docs/validation-log.md`](docs/validation-log.md)
 > section 4, with sanitised output in [`docs/evidence/2026-11-13-deployment/`](docs/evidence/2026-11-13-deployment/).
 > Latest offline run (2026-11-16, Milestone 3 Stages 1-4): `validate.sh` (`REQUIRE_ALL=1`) 19 passed, 0 failed, 0 skipped; `terraform test` 23/23; script tests 158/158 - see
-> [`docs/validation-log.md`](docs/validation-log.md) sections 12-16 (section 10 for the 2026-11-15 masking run).
+> [`docs/validation-log.md`](docs/validation-log.md) sections 12-17 (section 10 for the 2026-11-15 masking run).
+>
+> Latest live runs (2026-11-17, Milestone 3): four Deploy runs - healthy PASSED, deliberate failure correctly FAILED
+> with failure-cleanup verified, two 15-minute inspection runs PASSED - see
+> [`docs/validation-log.md`](docs/validation-log.md) section 18 and
+> [`docs/evidence/2026-11-17-m3-live-runs/`](docs/evidence/2026-11-17-m3-live-runs/).
 >
 > Latest live run (2026-11-14, Milestone 2 Deploy run [43588089749](https://github.com/Shayze01/atlas-platform-foundation/actions/runs/43588089749)):
 > 11 resources applied from the reviewed plan, public 5/5, in-VM 10/10, blocked 3/3,
@@ -935,7 +940,7 @@ Full design, trust boundaries, owner setup, recovery and costs:
 
 ## 18. Milestone 3: support-ticket application
 
-Implemented in reviewable stages (#6 merged; #7-#10 in review). **Offline-tested only.**
+Implemented in reviewable stages (#6-#10, merged). **Live-tested on 2026-11-17** in four Deploy runs (below).
 - **What it adds:**
   - the app in `tickets-app/`;
   - its deliberate fault build;
@@ -948,4 +953,9 @@ Implemented in reviewable stages (#6 merged; #7-#10 in review). **Offline-tested
   - a report with separate application and cleanup rows.
 - **Full guide:** [`docs/milestone-3.md`](docs/milestone-3.md).
 - **Offline results:** [`docs/validation-log.md`](docs/validation-log.md) sections 12-17.
-- **Not live-tested:** everything that needs Azure or GitHub scheduling (see the guide's last section).
+- **Live results (2026-11-17):** [`docs/validation-log.md`](docs/validation-log.md) section 18, evidence in [`docs/evidence/2026-11-17-m3-live-runs/`](docs/evidence/2026-11-17-m3-live-runs/):
+  - healthy automated run [44181640588](https://github.com/Shayze01/atlas-platform-foundation/actions/runs/44181640588): tests passed, cleanup verified, PASSED;
+  - deliberate-failure run [44183827536](https://github.com/Shayze01/atlas-platform-foundation/actions/runs/44183827536): API and browser tests caught the status bug, failure-cleanup destroyed the workload, the run stayed FAILED;
+  - first inspection run [44186665828](https://github.com/Shayze01/atlas-platform-foundation/actions/runs/44186665828): automation and cleanup passed; the owner's browser was blocked by an outdated allowed IP (owner-reported);
+  - inspection retry [44191447996](https://github.com/Shayze01/atlas-platform-foundation/actions/runs/44191447996): automated tests, the full 15-minute window and cleanup passed; manual testing owner-reported.
+- **Not live-tested:** the guest timer firing, the hourly sweep acting on resources, failure-cleanup paths other than DESTROY, a rejected approval or cancelled apply, the gates refusing, the 02:00 auto-shutdown and nightly Destroy, 30/45-minute windows (see the guide's last section).

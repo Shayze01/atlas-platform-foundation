@@ -110,17 +110,25 @@ No new Azure roles, environments or federated credentials are needed.
 
 ## Tested offline vs not yet tested
 
-Offline results are in [`validation-log.md`](validation-log.md) sections 12-16.
+Offline results are in [`validation-log.md`](validation-log.md) sections 12-17.
+Live results (2026-11-17, four Deploy runs) are in section 18, with sanitised evidence in
+[`evidence/2026-11-17-m3-live-runs/`](evidence/2026-11-17-m3-live-runs/).
+
+**Live-tested:** a healthy automated run; the deliberate-failure run (API and browser tests
+caught the status bug, `failure-cleanup` destroyed the workload with the `azure-destroy`
+credential, the run stayed FAILED); two 15-minute inspection runs (manual testing is
+owner-reported); the GHCR pull and digest check on a real VM; Playwright from the runner;
+the lifetime and pre-window gates passing.
+
 **Not live-tested:**
-- the GHCR pull and digest check on a real VM;
-- the guest timer and boot-time check;
-- the hourly sweep;
-- failure-cleanup and the `azure-destroy` credential;
+- the guest timer firing and the boot-time check (the timer was only seen armed);
+- the hourly sweep acting on real resources;
+- failure-cleanup's PROTECT, NOOP and INCONCLUSIVE paths (only DESTROY ran live);
 - a rejected approval triggering failure-cleanup;
 - job outputs after a cancelled apply (if lost, the workload is protected until it expires, then the sweep destroys it);
 - the lifetime gates refusing live;
 - the 02:00 auto-shutdown and nightly Destroy;
-- Playwright from the runner;
+- a 30- or 45-minute inspection window (only 15 minutes ran live);
 - that `az resource list` matches the mapping fixture exactly.
 
 Costs are estimates pending billing data.

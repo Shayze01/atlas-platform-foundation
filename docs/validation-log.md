@@ -628,3 +628,53 @@ Terraform 1.9.8 locally (local backend, `terraform_data`, no Azure): a stale sav
 Totals: guarded cleanup 42/42 (was 23), report 16/16 (was 12). Full offline suite re-run on Stage 4 and Stage 5: 19 passed, 0 failed, 0 skipped (step count unchanged; the new tests are inside existing steps).
 
 **Not live-tested:** the pre-apply snapshot with the `azure-deploy` identity, apply-error classification against the Azure backend, and every failure-cleanup decision above against real Azure.
+
+## 18. Milestone 3 live runs (2026-11-17, Azure)
+
+Four **Deploy** runs, `workflow_dispatch` on `main` at `73e4fb4`, each approved by the owner
+at `azure-deploy` after reviewing the plan. Sanitised evidence:
+[`evidence/2026-11-17-m3-live-runs/`](evidence/2026-11-17-m3-live-runs/). No application URL or
+public IP appears in the job logs or the evidence.
+
+| Run | Scenario, window | App tests | Deployment job | Window | Cleanup | Run result |
+| --- | --- | --- | --- | --- | --- | --- |
+| [44181640588](https://github.com/Shayze01/atlas-platform-foundation/actions/runs/44181640588) | healthy, 0 min | PASS | PASS | n/a | PASS (in-job destroy) | PASSED |
+| [44183827536](https://github.com/Shayze01/atlas-platform-foundation/actions/runs/44183827536) | deliberate-failure-ignore-status, 0 min | FAIL (expected) | FAIL | n/a | PASS (failure-cleanup) | FAILED (correct) |
+| [44186665828](https://github.com/Shayze01/atlas-platform-foundation/actions/runs/44186665828) | healthy, 15 min | PASS | PASS | DONE, 15 min | PASS (in-job destroy) | PASSED |
+| [44191447996](https://github.com/Shayze01/atlas-platform-foundation/actions/runs/44191447996) | healthy, 15 min | PASS | PASS | DONE, 15 min | PASS (in-job destroy) | PASSED |
+
+Common to all four: plan 11 add / 0 change / 0 destroy, plan policy 14/14, pre-apply gate
+PASS, apply 11 added, public checks 7/7, in-VM checks 12/12 (running image is exactly the
+planned digest; guest expiry timer armed), 11 destroyed, `verify-cleanup.sh` PASS with the
+empty resource group kept. Backend and identities were not touched.
+
+- **Healthy automated (44181640588):** API flow (create, status change, read back, history,
+  filter) and browser check (Playwright/Chromium from the runner) passed; temporary runner rule
+  removed and runner blocked again (3/3). `failure-cleanup` skipped.
+- **Deliberate failure (44183827536):** the broken image passed the deployment checks; the API
+  flow failed with `status mismatch: expected 'In progress', got 'Open'` (exit 3) and the browser
+  check with `status mismatch after reload: expected 'In progress', got 'Open'`. The apply job
+  failed, so **`failure-cleanup` ran** (azure-destroy identity): `DECISION=DESTROY`, reason "every
+  workload resource was created by this run (the pre-apply state was empty) and carries this
+  run's ExpiresAt 2026-11-17T23:41:00Z"; 11 destroyed; cleanup verified;
+  `RESULT (failure-cleanup): DESTROYED`. The report showed application FAIL, cleanup PASS and
+  run **FAILED**, as designed.
+- **First inspection run (44186665828):** pre-window gate needed 45 min (inspection 15 +
+  cleanup 20 + margin 10) and had 75 min spare; the window ran 22:12:57-22:27:57 UTC in full,
+  then the in-job destroy. **Owner-reported:** the owner's browser was blocked because
+  `ADMIN_SOURCE_IP_CIDR` held an outdated IP, so the NSG worked as designed but manual
+  inspection was not possible.
+- **Inspection retry (44191447996):** pre-window gate PASS (76 min spare); window
+  22:40:51-22:55:51 UTC in full; cleanup verified. **Owner-reported:** manual testing during the
+  window succeeded. Specific manual actions are not recorded.
+
+**Now live-tested:** GHCR pull and digest check on a real VM; Playwright from the runner;
+the deliberate fault caught by both independent tests; `failure-cleanup` DESTROY path with the
+`azure-destroy` credential; separate application/cleanup reporting with application failure
+failing the run; pre-apply and pre-window gates passing; a full 15-minute inspection window.
+
+**Still not live-tested:** the guest timer firing and the boot-time check; the hourly sweep
+acting on real resources; failure-cleanup's PROTECT, NOOP and INCONCLUSIVE paths; a rejected
+approval triggering failure-cleanup; job outputs after a cancelled apply; the gates refusing
+live; the 02:00 auto-shutdown and 03:30 UTC nightly Destroy; 30/45-minute windows; that
+`az resource list` matches the mapping fixture exactly. Costs remain estimates pending billing data.
